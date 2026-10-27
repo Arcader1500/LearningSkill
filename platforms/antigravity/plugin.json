@@ -1,0 +1,10 @@
+{
+  "name": "learning-skill",
+  "description": "Create and teach personalized courses, assess understanding, review learner work, and resume saved progress.",
+  "version": "0.1.0",
+  "suggestedPrompts": [
+    "Help me create a course to learn a topic",
+    "Resume my saved course and continue from the next lesson",
+    "I finished the assignment; help me submit it for review"
+  ]
+}

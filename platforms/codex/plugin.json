@@ -1,0 +1,10 @@
+{
+  "name": "learning-skill",
+  "version": "0.1.0",
+  "description": "Create and teach personalized courses, assess understanding, review learner work, and resume saved progress.",
+  "skills": "./skills/",
+  "interface": {
+    "shortDescription": "Create courses, learn with lessons, and resume progress",
+    "displayName": "LearningSkill"
+  }
+}
