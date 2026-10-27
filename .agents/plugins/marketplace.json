@@ -1,0 +1,20 @@
+{
+  "name": "learning-skill-local",
+  "interface": {
+    "displayName": "LearningSkill Local"
+  },
+  "plugins": [
+    {
+      "name": "learning-skill",
+      "source": {
+        "path": "./dist/codex",
+        "source": "local"
+      },
+      "category": "Productivity",
+      "policy": {
+        "installation": "AVAILABLE",
+        "authentication": "ON_INSTALL"
+      }
+    }
+  ]
+}
