@@ -20,7 +20,9 @@ test('commits, reads, appends detached refs, and resolves idempotent retry befor
   assert.equal((await readCourse(root)).records.length, 2);
   const beforeFault = record('qa_recorded', {}, { recordId: 'fault-1', operationId: 'fault-op', revision: 3 });
   await assert.rejects(commit(root, { operationId: 'fault-op', expectedRevision: 2, records: [beforeFault] }, { fs: { open: async () => { throw Object.assign(new Error('open denied'), { code: 'EACCES' }); } } }), { code: 'IO_ERROR' });
-  await assert.rejects(commit(root, { operationId: 'fault-op', expectedRevision: 2, records: [beforeFault] }, { fs: { rename: async () => { throw Object.assign(new Error('rename failure'), { code: 'EACCES' }); } } }), { code: 'IO_ERROR' });
+  let persistentAttempts = 0;
+  await assert.rejects(commit(root, { operationId: 'fault-op', expectedRevision: 2, records: [beforeFault] }, { fs: { rename: async () => { persistentAttempts++; throw Object.assign(new Error('persistent rename failure'), { code: 'EPERM' }); } } }), { code: 'IO_ERROR' });
+  assert.equal(persistentAttempts, 5);
   assert.equal((await readCourse(root)).state.revision, 2);
   const interrupted = record('qa_recorded', {}, { recordId: 'orphan-1', operationId: 'orphan-op', revision: 3 });
   await assert.rejects(commit(root, { operationId: 'orphan-op', expectedRevision: 2, records: [interrupted] }, { afterArtifacts: async () => { throw new Error('interrupted'); } }));
@@ -30,17 +32,22 @@ test('commits, reads, appends detached refs, and resolves idempotent retry befor
   const postResult = await commit(root, { operationId: 'post-op', expectedRevision: 3, records: [post] }, { afterCheckpoint: async () => { throw new Error('post commit'); } });
   assert.equal(postResult.committed, true);
   assert.equal((await readCourse(root)).state.revision, 4);
+  const transient = record('qa_recorded', {}, { recordId: 'transient-1', operationId: 'transient-op', revision: 5 });
+  let transientAttempts = 0;
+  const recoveredRename = await commit(root, { operationId: 'transient-op', expectedRevision: 4, records: [transient] }, { fs: { rename: async (from, to) => { if (++transientAttempts === 1) throw Object.assign(new Error('transient rename contention'), { code: 'EPERM' }); return (await import('node:fs/promises')).rename(from, to); } } });
+  assert.equal(recoveredRename.revision, 5);
+  assert.equal(transientAttempts, 2);
   const secondRoot = await mkdtemp(path.join(process.cwd(), '.test-tmp-concurrent-'));
   t.after(() => rm(secondRoot, { recursive: true, force: true }));
   const entry = new URL('../src/store.mjs', import.meta.url).href;
-  const runner = `import {commit} from ${JSON.stringify(entry)}; const r={schemaVersion:1,recordId:'race-'+process.pid,operationId:'race-'+process.pid,kind:'course_initialized',timestamp:new Date().toISOString(),courseId:'race-course',revision:1,contentRevision:1,fingerprint:'x',payload:{initialState:{schemaVersion:1,courseId:'race-course',revision:0,contentRevision:1,phase:'draft',learnerContext:{},goal:'g',prerequisites:[],readingRateWpm:238,lessons:[],reading:{},assessments:{},assignments:{},pendingQuestion:null,attempts:{},recordRefs:[],operationFingerprints:{},unresolvedTopics:[],nextAction:'n',notesProjection:null}}}; try { await commit(process.argv[1],{operationId:r.operationId,expectedRevision:0,records:[r]}); console.log('ok'); } catch(e) { console.log(e.code); }`;
+  const runner = `import {commit} from ${JSON.stringify(entry)}; const r={schemaVersion:1,recordId:'race-'+process.pid,operationId:'race-'+process.pid,kind:'course_initialized',timestamp:new Date().toISOString(),courseId:'race-course',revision:1,contentRevision:1,fingerprint:'x',payload:{initialState:{schemaVersion:1,courseId:'race-course',revision:0,contentRevision:1,phase:'draft',learnerContext:{},goal:'g',prerequisites:[],readingRateWpm:238,lessons:[],reading:{},assessments:{},assignments:{},courseManifest:null,materialRefs:[],pendingQuestion:null,attempts:{},recordRefs:[],operationFingerprints:{},unresolvedTopics:[],nextAction:'n',notesProjection:null}}}; try { await commit(process.argv[1],{operationId:r.operationId,expectedRevision:0,records:[r]}); console.log('ok'); } catch(e) { console.log(e.code); }`;
   const runChild = () => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--input-type=module', '-e', runner, secondRoot], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
     let out = ''; let err = ''; child.stdout.on('data', (chunk) => { out += chunk; }); child.stderr.on('data', (chunk) => { err += chunk; });
     child.on('close', (code) => code === 0 ? resolve(out.trim()) : reject(new Error(err || `child exit ${code}`)));
   });
   const races = await Promise.all([runChild(), runChild()]);
-  assert.equal(races.filter((x) => x === 'ok').length, 1);
+  assert.equal(races.filter((x) => x === 'ok').length, 1, JSON.stringify(races));
   assert.ok(races.some((x) => x === 'LOCKED' || x === 'CONFLICT'));
   await writeFile(path.join(secondRoot, '.course.lock'), JSON.stringify({ token: 'correct' }));
   const { recoverLock } = await import('../src/store.mjs');

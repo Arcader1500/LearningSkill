@@ -17,6 +17,39 @@ function uniqueIds(values, label) {
   assert(new Set(ids).size === ids.length, `${label} contains duplicates`);
 }
 
+function validateMaterials(materials) {
+  assert(Array.isArray(materials) && materials.length > 0, 'Manifest requires materials', 'CORRUPT_STATE');
+  const paths = new Set();
+  for (const material of materials) {
+    assert(object(material) && typeof material.path === 'string' && material.path.length > 0 && !material.path.startsWith('/') && !material.path.includes('\\') && !material.path.split('/').some((part) => part === '..' || part === '.' || part === '') && ['course','reading','assignment','key'].includes(material.role) && /^[a-f0-9]{64}$/i.test(material.sha256), 'Manifest material has an invalid path, role, or hash', 'CORRUPT_STATE');
+    assert(!paths.has(material.path), 'Manifest contains duplicate material paths', 'CORRUPT_STATE');
+    paths.add(material.path);
+  }
+  return materials;
+}
+
+function validateManifest(manifest) {
+  assert(object(manifest) && typeof manifest.goal === 'string' && manifest.goal.trim().length > 0 && Array.isArray(manifest.prerequisites) && object(manifest.scope) && Array.isArray(manifest.scope.included) && Array.isArray(manifest.scope.excluded) && Array.isArray(manifest.lessons) && Array.isArray(manifest.sources) && object(manifest.estimates), 'Invalid course manifest', 'CORRUPT_STATE');
+  assert(manifest.prerequisites.every((x) => typeof x === 'string') && manifest.scope.included.every((x) => typeof x === 'string') && manifest.scope.excluded.every((x) => typeof x === 'string'), 'Manifest context lists must contain strings', 'CORRUPT_STATE');
+  uniqueIds(manifest.lessons.map((lesson) => lesson?.lessonId), 'manifest lessons');
+  for (const lesson of manifest.lessons) {
+    assert(Array.isArray(lesson.outcomeIds) && lesson.outcomeIds.length > 0, 'Each published lesson requires outcomes', 'CORRUPT_STATE');
+    uniqueIds(lesson.outcomeIds, 'lesson outcomes');
+  }
+  for (const source of manifest.sources) assert(object(source) && typeof source.title === 'string' && source.title.length > 0 && typeof source.version === 'string', 'Invalid course source reference', 'CORRUPT_STATE');
+  for (const name of ['readingMinutes','practiceMinutes','setupMinutes']) assert(Number.isFinite(manifest.estimates[name]) && manifest.estimates[name] >= 0, `Invalid ${name} estimate`, 'CORRUPT_STATE');
+  return { ...manifest, materials: validateMaterials(manifest.materials) };
+}
+
+function applyManifest(state, manifest) {
+  state.courseManifest = structuredClone(manifest);
+  state.materialRefs = structuredClone(manifest.materials);
+  state.goal = manifest.goal;
+  state.prerequisites = [...manifest.prerequisites];
+  state.lessons = structuredClone(manifest.lessons);
+  for (const lesson of manifest.lessons) state.reading[lesson.lessonId] ??= 'not_started';
+}
+
 export function validateMutation(request) {
   assert(object(request) && safeId(request.operationId) && Number.isSafeInteger(request.expectedRevision) && request.expectedRevision >= 0, 'Mutation requires a safe operationId and non-negative expectedRevision', 'INVALID_INPUT');
   return { operationId: request.operationId, expectedRevision: request.expectedRevision };
@@ -30,17 +63,38 @@ export function validateState(state) {
   assert(object(state.learnerContext) && Array.isArray(state.prerequisites) && typeof state.goal === 'string' && Number.isFinite(state.readingRateWpm) && state.readingRateWpm > 0, 'Invalid course context');
   assert(Array.isArray(state.lessons) && object(state.reading) && object(state.assessments) && object(state.assignments) && object(state.attempts), 'Invalid course indexes');
   uniqueIds(state.lessons.map((x) => x?.lessonId), 'lessons');
-  for (const lesson of state.lessons) assert(object(lesson) && Array.isArray(lesson.outcomeIds), 'Invalid lesson definition');
+  const declaredOutcomes = new Set();
+  for (const lesson of state.lessons) {
+    assert(object(lesson) && Array.isArray(lesson.outcomeIds), 'Invalid lesson definition');
+    uniqueIds(lesson.outcomeIds, 'lesson outcomes');
+    for (const outcomeId of lesson.outcomeIds) {
+      assert(!declaredOutcomes.has(outcomeId), `Duplicate course outcome: ${outcomeId}`);
+      declaredOutcomes.add(outcomeId);
+    }
+  }
   for (const [id, value] of Object.entries(state.reading)) assert(safeId(id) && READING.has(value), 'Invalid reading state');
   for (const index of [state.assessments, state.assignments]) for (const [id, item] of Object.entries(index)) {
     assert(safeId(id), 'Invalid assessment/assignment ID');
     const status = typeof item === 'string' ? item : item?.state;
     assert(WORK.has(status), 'Invalid assessment/assignment state');
     if (typeof item === 'object' && item !== null && item.criteria !== undefined) validateCriteria(item.criteria);
+    if (index === state.assessments && typeof item === 'object' && item !== null) {
+      assert(Array.isArray(item.outcomeIds) && item.outcomeIds.length > 0 && item.outcomeIds.every(safeId), `Assessment ${id} has invalid outcome references`);
+      if (item.assignmentId !== undefined) assert(safeId(item.assignmentId) && Object.hasOwn(state.assignments, item.assignmentId), `Assessment ${id} references missing assignment`);
+    }
   }
   assert(state.pendingQuestion === null || object(state.pendingQuestion), 'Invalid pending question');
-  for (const [id, attempt] of Object.entries(state.attempts)) assert(safeId(id) && object(attempt) && safeId(attempt.assessmentId) && safeId(attempt.attemptId) && typeof attempt.assistance === 'string' && ['none','hint','worked_example','solution_shown','tutor_performed','unknown'].includes(attempt.assistance) && (attempt.response === null || typeof attempt.response === 'string') && Array.isArray(attempt.evidence), 'Invalid attempt state');
+  for (const [id, attempt] of Object.entries(state.attempts)) {
+    assert(safeId(id) && object(attempt) && safeId(attempt.assessmentId) && safeId(attempt.attemptId) && typeof attempt.assistance === 'string' && ['none','hint','worked_example','solution_shown','tutor_performed','unknown'].includes(attempt.assistance) && (attempt.response === null || typeof attempt.response === 'string') && Array.isArray(attempt.evidence), 'Invalid attempt state');
+    const assessment = state.assessments[attempt.assessmentId];
+    assert(object(assessment) && attempt.attemptId === id && attempt.rubricRevision === assessment.rubricRevision && (assessment.contentRevision === undefined || attempt.contentRevision === assessment.contentRevision) && JSON.stringify(attempt.outcomeIds) === JSON.stringify(assessment.outcomeIds) && attempt.assignmentId === assessment.assignmentId, `Attempt ${id} has inconsistent assessment links`);
+    for (const evidence of attempt.evidence) assert(object(evidence) && safeId(evidence.evidenceId) && ['tutor_observed','learner_supplied','not_run'].includes(evidence.provenance), `Attempt ${id} has invalid evidence`);
+  }
   if (state.pendingQuestion) for (const key of ['questionId', 'assessmentId', 'attemptId', 'presentationToken']) assert(safeId(state.pendingQuestion[key]), `Pending question requires ${key}`);
+  assert((state.courseManifest === null || object(state.courseManifest)) && Array.isArray(state.materialRefs), 'Invalid published course context');
+  if (state.courseManifest) validateManifest(state.courseManifest);
+  if (state.materialRefs.length) validateMaterials(state.materialRefs);
+  if (state.courseManifest) assert(JSON.stringify(state.materialRefs) === JSON.stringify(state.courseManifest.materials), 'Material references differ from the current course manifest');
   assert(Array.isArray(state.recordRefs) && object(state.operationFingerprints) && Array.isArray(state.unresolvedTopics), 'Invalid history/projection fields');
   uniqueIds(state.recordRefs.map((x) => x?.recordId), 'recordRefs');
   for (const ref of state.recordRefs) assert(object(ref) && safeId(ref.recordId) && typeof ref.path === 'string' && !ref.path.startsWith('/') && !ref.path.split(/[\\/]/).includes('..') && /^[a-f0-9]{64}$/i.test(ref.sha256), 'Invalid record reference');
@@ -70,15 +124,15 @@ export function validateRecord(record) {
   const hasIds = (...names) => names.every((name) => safeId(p[name]));
   switch (record.kind) {
     case 'course_initialized': assert(object(p.initialState), 'Initialization requires initialState'); break;
-    case 'course_published': assert(object(p.manifest) && Array.isArray(p.manifest.materials) && p.manifest.materials.length > 0, 'Publication requires a material manifest'); break;
-    case 'course_revised': assert(Number.isSafeInteger(p.contentRevision) && Array.isArray(p.materialChanges), 'Revision requires new contentRevision and materialChanges'); break;
+    case 'course_published': validateManifest(p.manifest); break;
+    case 'course_revised': assert(Number.isSafeInteger(p.contentRevision) && Array.isArray(p.materialChanges) && p.materialChanges.length > 0, 'Revision requires new contentRevision and changed material references'); validateManifest(p.manifest); break;
     case 'qa_recorded': assert(typeof p.question === 'string' && p.question.length > 0 && typeof p.answerSummary === 'string' && p.answerSummary.length > 0, 'Q&A record requires the actual question and answer summary'); break;
     case 'progress_recorded': assert(hasIds('lessonId') && READING.has(p.reading), 'Progress record requires a lesson and reading state'); break;
-    case 'assessment_prepared': assert(hasIds('assessmentId') && Number.isSafeInteger(p.rubricRevision) && p.rubricRevision > 0 && typeof p.objective === 'string' && p.objective.length > 0 && Array.isArray(p.questions) && p.questions.length > 0 && typeof p.keyPath === 'string' && Array.isArray(p.criteria), 'Prepared assessment requires objective, fixed questions/key, rubric revision, and criteria'); validateCriteria(p.criteria); for (const q of p.questions) assert(object(q) && safeId(q.questionId) && typeof q.prompt === 'string' && q.prompt.length > 0 && ['free_text','choice'].includes(q.type) && (q.type !== 'choice' || (Array.isArray(q.options) && q.options.length > 1 && q.options.every((o) => object(o) && safeId(o.optionId) && typeof o.text === 'string') && new Set(q.options.map((o) => o.optionId)).size === q.options.length)), 'Invalid saved assessment question'); break;
-    case 'question_presented': assert(hasIds('assessmentId','questionId','attemptId','presentationToken') && typeof p.prompt === 'string' && p.prompt.length > 0, 'Question presentation requires saved IDs and exact prompt'); break;
-    case 'answer_recorded': assert(hasIds('assessmentId','questionId','attemptId','presentationToken','evidenceId') && typeof p.response === 'string' && p.response.trim().length > 0, 'Answer record requires matching IDs and explicit response'); break;
+    case 'assessment_prepared': assert(hasIds('assessmentId') && Number.isSafeInteger(p.rubricRevision) && p.rubricRevision > 0 && typeof p.objective === 'string' && p.objective.length > 0 && Array.isArray(p.questions) && p.questions.length > 0 && typeof p.keyPath === 'string' && !p.keyPath.startsWith('/') && !p.keyPath.split(/[\\/]/).includes('..') && Array.isArray(p.outcomeIds) && p.outcomeIds.length > 0 && (p.assignmentId === undefined || safeId(p.assignmentId)) && Array.isArray(p.criteria), 'Prepared assessment requires objective, outcomes, optional assignment link, fixed questions/key, rubric revision, and criteria'); uniqueIds(p.outcomeIds, 'assessment outcomes'); validateCriteria(p.criteria); for (const q of p.questions) assert(object(q) && safeId(q.questionId) && typeof q.prompt === 'string' && q.prompt.length > 0 && ['free_text','choice'].includes(q.type) && (q.type !== 'choice' || (Array.isArray(q.options) && q.options.length > 1 && q.options.every((o) => object(o) && safeId(o.optionId) && typeof o.text === 'string') && new Set(q.options.map((o) => o.optionId)).size === q.options.length)), 'Invalid saved assessment question'); break;
+    case 'question_presented': assert(hasIds('assessmentId','questionId','attemptId','presentationToken') && typeof p.prompt === 'string' && p.prompt.length > 0 && (p.routingId === undefined || (typeof p.routingId === 'string' && p.routingId.length > 0 && p.routingId.length <= 512)), 'Question presentation requires saved IDs and exact prompt'); break;
+    case 'answer_recorded': assert(hasIds('assessmentId','questionId','attemptId','presentationToken','evidenceId') && typeof p.response === 'string' && p.response.trim().length > 0 && (p.routingId === undefined || (typeof p.routingId === 'string' && p.routingId.length > 0 && p.routingId.length <= 512)), 'Answer record requires matching IDs and explicit response'); break;
     case 'assistance_recorded': assert(hasIds('attemptId') && ['none','hint','worked_example','solution_shown','tutor_performed','unknown'].includes(p.assistance), 'Assistance record requires attempt and valid assistance'); break;
-    case 'submission_recorded': assert(hasIds('attemptId','evidenceId') && typeof p.snapshotPath === 'string' && /^[a-f0-9]{64}$/i.test(p.snapshotSha256), 'Submission record requires snapshot reference'); break;
+    case 'submission_recorded': assert(hasIds('assessmentId','attemptId','evidenceId') && (p.assignmentId === undefined || safeId(p.assignmentId)) && typeof p.snapshotPath === 'string' && /^[a-f0-9]{64}$/i.test(p.snapshotSha256), 'Submission record requires assessment, attempt, and snapshot reference'); break;
     case 'attempt_graded':
       assert(hasIds('assessmentId','attemptId') && Number.isSafeInteger(p.rubricRevision) && Array.isArray(p.criteria) && Array.isArray(p.evidence) && typeof p.feedback === 'string' && p.feedback.trim().length > 0, 'Grade requires attempt, rubric, criterion results, evidence, and feedback', 'INVALID_GRADE');
       for (const result of p.criteria) assert(safeId(result.criterionId) && Number.isFinite(result.points) && Array.isArray(result.evidenceRefs) && typeof result.feedback === 'string' && result.feedback.trim().length > 0 && typeof result.independent === 'boolean', 'Invalid criterion result', 'INVALID_GRADE');
@@ -101,6 +155,13 @@ function grade(state, record) {
   if (p.rubricRevision !== definition.rubricRevision) invalid('Grade references the wrong rubric revision', 'INVALID_GRADE');
   const attempt = state.attempts[p.attemptId];
   if (!attempt || attempt.assessmentId !== p.assessmentId || attempt.rubricRevision !== p.rubricRevision || typeof attempt.response !== 'string' || !attempt.response.trim()) invalid('Cannot grade an unanswered or missing attempt', 'INVALID_INPUT');
+  if (attempt.assignmentId !== definition.assignmentId || JSON.stringify(attempt.outcomeIds) !== JSON.stringify(definition.outcomeIds)) invalid('Attempt links differ from the fixed assessment', 'INVALID_GRADE');
+  let linkedAssignment;
+  if (definition.assignmentId) {
+    linkedAssignment = state.assignments[definition.assignmentId];
+    if (!linkedAssignment || typeof linkedAssignment !== 'object' || linkedAssignment.state !== 'submitted' || linkedAssignment.latestSubmissionAttemptId !== p.attemptId || linkedAssignment.snapshotPath !== attempt.snapshotPath || linkedAssignment.snapshotSha256 !== attempt.snapshotSha256 || !attempt.submissionEvidenceId) invalid('Linked assignment has no matching submitted snapshot for this attempt', 'INVALID_GRADE');
+    if (!p.criteria.every((criterion) => criterion.evidenceRefs.includes(attempt.submissionEvidenceId))) invalid('Every linked assignment criterion must cite its submitted snapshot evidence', 'INVALID_GRADE');
+  }
   if (p.assistance !== attempt.assistance) invalid('Grade assistance differs from the recorded attempt', 'INVALID_GRADE');
   assert(Array.isArray(p.criteria), 'Grade criteria must be an array', 'INVALID_GRADE');
   const expected = new Map(definition.criteria.map((c) => [c.criterionId, c]));
@@ -127,6 +188,7 @@ function grade(state, record) {
   attempt.state = 'graded';
   const old = typeof assessment === 'string' ? {} : assessment;
   state.assessments[p.assessmentId] = { ...old, state: passed ? 'passed' : 'needs_review', latestAttemptId: p.attemptId, latestGrade: { points: total, maxPoints: maximum, percentage: maximum ? total / maximum * 100 : 0, feedback: p.feedback, criteria: p.criteria.map((r) => ({ criterionId: r.criterionId, points: r.points, maxPoints: expected.get(r.criterionId).maxPoints, status: r.points === 0 ? 'unmet' : r.points === expected.get(r.criterionId).maxPoints ? 'met' : 'partial', feedback: r.feedback, independent: r.independent, evidenceRefs: [...r.evidenceRefs] })) }, history: [...(old.history ?? []), { attemptId: p.attemptId, kind: 'attempt_graded', contentRevision: record.contentRevision }] };
+  if (linkedAssignment) state.assignments[definition.assignmentId] = { ...linkedAssignment, state: passed ? 'passed' : 'needs_review', latestGradeAttemptId: p.attemptId, history: [...(linkedAssignment.history ?? []), { attemptId: p.attemptId, kind: 'attempt_graded', rubricRevision: p.rubricRevision, snapshotSha256: attempt.snapshotSha256 }] };
 }
 
 export function reduceState(prior, records) {
@@ -147,22 +209,26 @@ export function reduceState(prior, records) {
       switch (record.kind) {
         case 'course_initialized': invalid('Course is already initialized', 'CONFLICT'); break;
         case 'course_published':
-          if (state.phase !== 'draft' || !object(p.manifest) || !Array.isArray(p.manifest.materials) || !p.manifest.materials.length) invalid('Publication requires a draft course and nonempty validated material manifest', 'NOT_READY');
-          for (const item of p.manifest.materials) if (typeof item.path !== 'string' || item.path.startsWith('/') || item.path.split('/').includes('..') || !/^[a-f0-9]{64}$/i.test(item.sha256)) invalid('Publication manifest contains an unsafe or unhashed material reference', 'CORRUPT_STATE');
+          if (state.phase !== 'draft') invalid('Only a draft course can be published', 'NOT_READY');
+          applyManifest(state, p.manifest);
           state.phase = 'active'; break;
         case 'course_revised':
-          if (!Number.isSafeInteger(p.contentRevision) || p.contentRevision <= state.contentRevision) invalid('Content revision must increase', 'CONFLICT');
+          if (!Number.isSafeInteger(p.contentRevision) || p.contentRevision !== state.contentRevision + 1 || p.contentRevision !== record.contentRevision) invalid('Content revision must increase by one and match the record', 'CONFLICT');
+          applyManifest(state, p.manifest);
           state.contentRevision = p.contentRevision; break;
         case 'qa_recorded': break;
         case 'progress_recorded':
           if (!state.lessons.some((l) => l.lessonId === p.lessonId) || !READING.has(p.reading)) invalid('Progress references unknown lesson or status');
           state.reading[p.lessonId] = p.reading;
           if (p.reading === 'reported_complete' && p.assessmentState === 'passed') invalid('Reading completion cannot pass an assessment');
+          if (typeof p.nextAction === 'string') state.nextAction = p.nextAction;
           break;
         case 'assessment_prepared':
           if (state.assessments[p.assessmentId]) invalid('Assessment ID already exists', 'CONFLICT');
+          if (!p.outcomeIds.every((outcomeId) => state.lessons.some((lesson) => lesson.outcomeIds.includes(outcomeId)))) invalid('Assessment references an undeclared lesson outcome', 'CORRUPT_STATE');
+          if (p.assignmentId !== undefined && !Object.hasOwn(state.assignments, p.assignmentId)) invalid('Assessment references an undeclared assignment', 'CORRUPT_STATE');
           validateCriteria(p.criteria);
-          state.assessments[p.assessmentId] = { state: 'pending', assessmentId: p.assessmentId, rubricRevision: p.rubricRevision, contentRevision: record.contentRevision, objective: p.objective, questions: p.questions, keyPath: p.keyPath, criteria: p.criteria };
+          state.assessments[p.assessmentId] = { state: 'pending', assessmentId: p.assessmentId, outcomeIds: p.outcomeIds, ...(p.assignmentId === undefined ? {} : { assignmentId: p.assignmentId }), rubricRevision: p.rubricRevision, contentRevision: record.contentRevision, objective: p.objective, questions: p.questions, keyPath: p.keyPath, criteria: p.criteria };
           break;
         case 'question_presented':
           const savedAssessment = state.assessments[p.assessmentId];
@@ -172,10 +238,13 @@ export function reduceState(prior, records) {
           if (!savedAssessment || !savedQuestion || p.prompt !== savedQuestion.prompt || (JSON.stringify(p.options ?? null) !== JSON.stringify(savedQuestion.options ?? null)) || !safeId(p.attemptId) || !safeId(p.presentationToken) || (savedAssessment.activeAttemptId && savedAssessment.activeAttemptId !== p.attemptId)) invalid('Question presentation differs from saved assessment or token', 'CORRUPT_STATE');
           if (existingAttempt && (existingAttempt.response !== null || existingAttempt.assessmentId !== p.assessmentId || existingAttempt.questionId !== p.questionId || existingAttempt.prompt !== p.prompt || JSON.stringify(existingAttempt.options ?? null) !== JSON.stringify(p.options ?? null) || existingAttempt.presentationToken === p.presentationToken)) invalid('Only the same unanswered question may be reoffered with a fresh token', 'STALE_QUESTION');
           if (!existingAttempt && state.pendingQuestion) invalid('Cannot replace a different unanswered question', 'STALE_QUESTION');
-          state.pendingQuestion = { assessmentId: p.assessmentId, questionId: p.questionId, attemptId: p.attemptId, presentationToken: p.presentationToken };
-          state.attempts[p.attemptId] = { ...(existingAttempt ?? {}), assessmentId: p.assessmentId, attemptId: p.attemptId, rubricRevision: state.assessments[p.assessmentId].rubricRevision, questionId: p.questionId, prompt: p.prompt, options: p.options ?? null, presentationToken: p.presentationToken, response: null, assistance: existingAttempt?.assistance ?? 'none', evidence: existingAttempt?.evidence ?? [], state: 'presented' }; break;
+          savedAssessment.state = 'in_progress';
+          state.pendingQuestion = { assessmentId: p.assessmentId, questionId: p.questionId, attemptId: p.attemptId, presentationToken: p.presentationToken, ...(p.routingId === undefined ? {} : { routingId: p.routingId }) };
+          const priorAttempt = { ...(existingAttempt ?? {}) };
+          delete priorAttempt.routingId;
+          state.attempts[p.attemptId] = { ...priorAttempt, assessmentId: p.assessmentId, attemptId: p.attemptId, outcomeIds: [...savedAssessment.outcomeIds], ...(savedAssessment.assignmentId === undefined ? {} : { assignmentId: savedAssessment.assignmentId }), rubricRevision: savedAssessment.rubricRevision, contentRevision: savedAssessment.contentRevision ?? record.contentRevision, questionId: p.questionId, prompt: p.prompt, options: p.options ?? null, presentationToken: p.presentationToken, ...(p.routingId === undefined ? {} : { routingId: p.routingId }), response: null, assistance: existingAttempt?.assistance ?? 'none', evidence: existingAttempt?.evidence ?? [], state: 'presented' }; break;
         case 'answer_recorded':
-          if (!state.pendingQuestion || p.assessmentId !== state.pendingQuestion.assessmentId || p.questionId !== state.pendingQuestion.questionId || p.attemptId !== state.pendingQuestion.attemptId || p.presentationToken !== state.pendingQuestion.presentationToken || typeof p.response !== 'string' || !p.response.trim() || !safeId(p.evidenceId)) invalid('Answer does not match an active question', 'STALE_QUESTION');
+          if (!state.pendingQuestion || p.assessmentId !== state.pendingQuestion.assessmentId || p.questionId !== state.pendingQuestion.questionId || p.attemptId !== state.pendingQuestion.attemptId || p.presentationToken !== state.pendingQuestion.presentationToken || p.routingId !== state.pendingQuestion.routingId || typeof p.response !== 'string' || !p.response.trim() || !safeId(p.evidenceId)) invalid('Answer does not match an active question', 'STALE_QUESTION');
           state.attempts[p.attemptId] = { ...state.attempts[p.attemptId], response: p.response, evidence: [...state.attempts[p.attemptId].evidence, { evidenceId: p.evidenceId, provenance: 'learner_supplied' }], state: 'submitted' };
           state.pendingQuestion = null;
           if (state.assessments[p.assessmentId] && typeof state.assessments[p.assessmentId] === 'object') state.assessments[p.assessmentId].state = 'submitted';
@@ -184,6 +253,11 @@ export function reduceState(prior, records) {
         case 'attempt_retried':
           if (!state.assessments[p.assessmentId] || !safeId(p.attemptId) || state.attempts[p.attemptId]) invalid('Retry references missing assessment or duplicate attempt', 'CORRUPT_STATE');
           state.assessments[p.assessmentId] = { ...(typeof state.assessments[p.assessmentId] === 'object' ? state.assessments[p.assessmentId] : { state: state.assessments[p.assessmentId] }), state: 'in_progress', activeAttemptId: p.attemptId };
+          if (state.assessments[p.assessmentId].assignmentId) {
+            const assignmentId = state.assessments[p.assessmentId].assignmentId;
+            const previous = state.assignments[assignmentId];
+            state.assignments[assignmentId] = { ...(typeof previous === 'object' ? previous : { state: previous }), state: 'in_progress', activeAttemptId: p.attemptId };
+          }
           break;
         case 'item_skipped': {
           if (p.itemType === 'lesson') {
@@ -214,10 +288,18 @@ export function reduceState(prior, records) {
         }
         case 'submission_recorded': {
           const attempt = state.attempts[p.attemptId];
-          if (!attempt || !safeId(p.evidenceId) || typeof p.snapshotPath !== 'string' || p.snapshotPath.startsWith('/') || p.snapshotPath.split(/[\\/]/).includes('..') || !/^[a-f0-9]{64}$/i.test(p.snapshotSha256) || !['tutor_observed','learner_supplied','not_run'].includes(p.provenance)) invalid('Submission lacks an attempt or immutable snapshot evidence', 'CORRUPT_STATE');
+          const assessment = state.assessments[p.assessmentId];
+          if (!attempt || attempt.assessmentId !== p.assessmentId || !assessment || attempt.assignmentId !== assessment.assignmentId || p.assignmentId !== assessment.assignmentId || attempt.snapshotSha256 || !safeId(p.evidenceId) || typeof p.snapshotPath !== 'string' || p.snapshotPath.startsWith('/') || p.snapshotPath.split(/[\\/]/).includes('..') || !/^[a-f0-9]{64}$/i.test(p.snapshotSha256) || !['tutor_observed','learner_supplied','not_run'].includes(p.provenance)) invalid('Submission must match the saved assessment, assignment, and attempt and include an immutable snapshot', 'CORRUPT_STATE');
           attempt.evidence.push({ evidenceId: p.evidenceId, provenance: p.provenance, snapshotPath: p.snapshotPath, snapshotSha256: p.snapshotSha256 });
           attempt.snapshotPath = p.snapshotPath; attempt.snapshotSha256 = p.snapshotSha256;
-          attempt.response = `submission:${p.snapshotSha256}`; attempt.state = 'submitted'; break;
+          attempt.submissionEvidenceId = p.evidenceId;
+          attempt.response = `submission:${p.snapshotSha256}`; attempt.state = 'submitted';
+          if (assessment.assignmentId) {
+            const previous = state.assignments[assessment.assignmentId];
+            state.assignments[assessment.assignmentId] = { ...(typeof previous === 'object' ? previous : { state: previous }), state: 'submitted', latestSubmissionAttemptId: p.attemptId, snapshotPath: p.snapshotPath, snapshotSha256: p.snapshotSha256, submissionEvidenceId: p.evidenceId };
+          }
+          if (state.pendingQuestion?.attemptId === p.attemptId) state.pendingQuestion = null;
+          break;
         }
         default: invalid('Unsupported record kind', 'UNSUPPORTED_SCHEMA');
       }

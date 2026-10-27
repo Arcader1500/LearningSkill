@@ -71,6 +71,14 @@ export async function recoverLock(root, { ownerToken, confirmedInactive } = {}) 
   return { recovered: true };
 }
 
+export async function renameWithRetry(from, to, { rename: replace = rename } = {}) {
+  for (const delay of [0, 10, 25, 50, 100]) {
+    if (delay) await new Promise((resolve) => setTimeout(resolve, delay));
+    try { await replace(from, to); return; }
+    catch (e) { if (e.code !== 'EPERM' || delay === 100) throw e; }
+  }
+}
+
 export async function commit(root, request, options = {}) {
   const mutation = validateMutation(request);
   return withCourseLock(root, async ({ markCommitted }) => {
@@ -151,6 +159,9 @@ async function prepareSnapshots(root, snapshots) {
 async function replaceCheckpoint(root, bytes, options) {
   const target = await resolveContained(root, 'state.json', { allowMissing: true });
   const temp = await resolveContained(root, `.state-${randomUUID()}.tmp`, { allowMissing: true });
-  try { await (options.fs?.writeFile ?? writeFile)(temp, bytes, { flag: 'wx' }); await (options.fs?.rename ?? rename)(temp, target); }
+  try {
+    await (options.fs?.writeFile ?? writeFile)(temp, bytes, { flag: 'wx' });
+    await renameWithRetry(temp, target, { rename: options.fs?.rename ?? rename });
+  }
   catch (e) { try { await unlink(temp); } catch {} throw io(e); }
 }
