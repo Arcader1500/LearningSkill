@@ -7,7 +7,7 @@ export function state(overrides = {}) {
     schemaVersion: 1, courseId: 'course-1', revision: 0, contentRevision: 1,
     phase: 'draft', learnerContext: {}, goal: 'Learn the subject', prerequisites: [],
     readingRateWpm: 238, lessons: [], reading: {}, assessments: {}, assignments: {},
-    courseManifest: null, materialRefs: [], pendingQuestion: null, attempts: {}, recordRefs: [], operationFingerprints: {},
+    courseManifest: null, materialRefs: [], artifactRefs: [], pendingQuestion: null, attempts: {}, recordRefs: [], operationFingerprints: {},
     unresolvedTopics: [], nextAction: 'prepare course', notesProjection: null,
     ...overrides,
   };

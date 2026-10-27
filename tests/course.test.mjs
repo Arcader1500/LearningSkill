@@ -1,15 +1,16 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, mkdir, writeFile, rm } from 'node:fs/promises';
+import { mkdtemp, mkdir, writeFile, readFile, rm } from 'node:fs/promises';
 import { spawnSync } from 'node:child_process';
 import path from 'node:path';
 import { initializeCourse, publishCourse, discoverCourses, recordQA, recordProgress, resumeCourse } from '../src/course.mjs';
 import { commit } from '../src/store.mjs';
 
 const temp = async (t) => { const root = await mkdtemp(path.join(process.cwd(), '.test-tmp-course-')); t.after(() => rm(root, { recursive: true, force: true })); return root; };
-const setup = async (t) => {
+const initRequest = { operationId: 'init', expectedRevision: 0, courseId: 'course-1', learnerContext: { level: 'beginner' }, goal: 'Understand layers', prerequisites: [], readingRateWpm: 238, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'], requiredAssessmentIds: ['quiz-1'] }], assessments: { 'quiz-1': { state: 'pending', outcomeIds: ['outcome-1'] } }, assignments: {}, nextAction: 'Read lesson-1' };
+const setup = async (t, courseRequest = initRequest) => {
   const root = await temp(t);
-  await initializeCourse(root, { operationId: 'init', expectedRevision: 0, courseId: 'course-1', learnerContext: { level: 'beginner' }, goal: 'Understand layers', prerequisites: [], readingRateWpm: 238, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'], requiredAssessmentIds: ['quiz-1'] }], assessments: { 'quiz-1': { state: 'pending', outcomeIds: ['outcome-1'] } }, assignments: {}, nextAction: 'Read lesson-1' });
+  await initializeCourse(root, courseRequest);
   await mkdir(path.join(root, 'lessons'), { recursive: true });
   await writeFile(path.join(root, 'course.md'), '# Layers\n\n## Goal\nUnderstand image layers.\n\n## Sources\n- [Lesson](lessons/lesson-1.md)\n');
   await writeFile(path.join(root, 'lessons', 'lesson-1.md'), '# Layers\n\nA layer stores changes.');
@@ -19,15 +20,68 @@ const manifest = { goal: 'Understand layers', prerequisites: ['basic Linux'], sc
 
 test('initialization, validated publication, Q&A, reading progress and resume retain committed state', async (t) => {
   const root = await setup(t);
-  const published = await publishCourse(root, { operationId: 'pub', expectedRevision: 1, manifest });
+  const publishRequest = { operationId: 'pub', expectedRevision: 1, manifest };
+  const published = await publishCourse(root, publishRequest);
   assert.equal(published.state.phase, 'active');
   assert.ok(published.records[0].payload.manifest.materials.every((x) => /^[a-f0-9]{64}$/.test(x.sha256)));
-  await recordQA(root, { operationId: 'qa', expectedRevision: 2, question: 'Why layers?', answerSummary: 'They store incremental changes.', followUp: 'Compare copying.', lessonId: 'lesson-1' });
-  await recordProgress(root, { operationId: 'read', expectedRevision: 3, lessonId: 'lesson-1', reading: 'reported_complete' });
+  const qaRequest = { operationId: 'qa', expectedRevision: 2, question: 'Why layers?', answerSummary: 'They store incremental changes.', followUp: 'Compare copying.', lessonId: 'lesson-1' };
+  await recordQA(root, qaRequest);
+  const progressRequest = { operationId: 'read', expectedRevision: 3, lessonId: 'lesson-1', reading: 'reported_complete' };
+  await recordProgress(root, progressRequest);
   const resumed = await resumeCourse(root);
   assert.equal(resumed.state.reading['lesson-1'], 'reported_complete');
   assert.equal(resumed.state.assessments['quiz-1'].state, 'pending');
   assert.equal(resumed.records.length, 4);
+  assert.equal((await initializeCourse(root, initRequest)).revision, 1);
+  assert.equal((await publishCourse(root, publishRequest)).revision, 2);
+  assert.equal((await recordQA(root, qaRequest)).revision, 3);
+  assert.equal((await recordProgress(root, progressRequest)).revision, 4);
+
+  const previousNotes = await readFile(path.join(root, 'classnotes.md'));
+  await writeFile(path.join(root, 'classnotes.md'), 'unexpected manual edit');
+  const notesRetry = { operationId: 'qa-notes-retry', expectedRevision: 4, question: 'How are changes layered?', answerSummary: 'New changes form another layer.' };
+  const first = await recordQA(root, notesRetry);
+  assert.equal(first.committed, true);
+  assert.equal(first.notesStatus.ok, false);
+  await writeFile(path.join(root, 'classnotes.md'), previousNotes);
+  const retried = await recordQA(root, notesRetry);
+  assert.equal(retried.revision, 5);
+  assert.equal(retried.notesStatus.ok, true);
+  assert.equal((await resumeCourse(root)).state.revision, 5);
+});
+
+test('completion projection keeps a placeholder required assessment pending', async (t) => {
+  const root = await setup(t);
+  await publishCourse(root, { operationId: 'pub', expectedRevision: 1, manifest });
+  const closed = await recordProgress(root, { operationId: 'finish-pending', expectedRevision: 2, action: 'finish' });
+  assert.equal(closed.state.phase, 'closed_with_exceptions');
+  assert.ok(closed.state.unresolvedTopics.some((item) => item.includes('outcome-1')));
+  assert.equal(closed.state.assessments['quiz-1'].state, 'pending');
+});
+
+test('a published lesson outcome without an assessment cannot complete the course', async (t) => {
+  const request = { ...initRequest, assessments: {}, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }] };
+  const root = await setup(t, request);
+  await publishCourse(root, { operationId: 'pub-no-assessment', expectedRevision: 1, manifest });
+  await recordProgress(root, { operationId: 'read-no-assessment', expectedRevision: 2, lessonId: 'lesson-1', reading: 'reported_complete' });
+
+  const result = await recordProgress(root, { operationId: 'finish-no-assessment', expectedRevision: 3, action: 'finish' });
+  assert.equal(result.state.phase, 'closed_with_exceptions');
+  assert.ok(result.state.unresolvedTopics.some((item) => item.includes('outcome-1')));
+});
+
+test('an explicitly not-required assessment exempts its outcome after reported reading completion', async (t) => {
+  const request = {
+    ...initRequest,
+    lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'], requiredAssessmentIds: ['quiz-exempt'] }],
+    assessments: { 'quiz-exempt': { state: 'not_required', outcomeIds: ['outcome-1'] } },
+  };
+  const root = await setup(t, request);
+  await publishCourse(root, { operationId: 'pub-exempt', expectedRevision: 1, manifest });
+  await recordProgress(root, { operationId: 'read-exempt', expectedRevision: 2, lessonId: 'lesson-1', reading: 'reported_complete' });
+
+  const result = await recordProgress(root, { operationId: 'finish-exempt', expectedRevision: 3, action: 'finish' });
+  assert.equal(result.state.phase, 'completed');
 });
 
 test('discovery is bounded, reports ambiguity/corruption and explicit roots resume directly', async (t) => {
@@ -66,25 +120,31 @@ test('material hashes are checked on resume; explicit material revision preserve
 
 test('republishing active material creates a new content revision and preserves reading progress', async (t) => {
   const root = await setup(t);
-  await publishCourse(root, { operationId: 'pub', expectedRevision: 1, manifest });
+  const publishRequest = { operationId: 'pub', expectedRevision: 1, manifest };
+  await publishCourse(root, publishRequest);
   await recordProgress(root, { operationId: 'read', expectedRevision: 2, lessonId: 'lesson-1', reading: 'in_progress' });
   await writeFile(path.join(root, 'lessons', 'lesson-1.md'), '# Layers\n\nA layer stores filesystem changes and metadata.');
   const revised = await publishCourse(root, { operationId: 'revise', expectedRevision: 3, manifest, nextAction: 'Review the updated lesson' });
   assert.equal(revised.state.contentRevision, 2);
   assert.equal(revised.state.reading['lesson-1'], 'in_progress');
   assert.equal(revised.records[0].kind, 'course_revised');
+  assert.equal((await publishCourse(root, publishRequest)).revision, 2);
 });
 
 test('retry, skips and finish preserve learner choice and enumerate course exceptions', async (t) => {
   const root = await setup(t);
   const retry = await recordProgress(root, { operationId: 'retry', expectedRevision: 1, action: 'retry', assessmentId: 'quiz-1', attemptId: 'attempt-1' });
   assert.equal(retry.state.assessments['quiz-1'].activeAttemptId, 'attempt-1');
-  await recordProgress(root, { operationId: 'skip-work', expectedRevision: 2, action: 'skip', itemType: 'assessment', itemId: 'quiz-1', reason: 'Pause for now' });
+  const skipRequest = { operationId: 'skip-work', expectedRevision: 2, action: 'skip', itemType: 'assessment', itemId: 'quiz-1', reason: 'Pause for now' };
+  await recordProgress(root, skipRequest);
   await recordProgress(root, { operationId: 'skip-lesson', expectedRevision: 3, action: 'skip', itemType: 'lesson', itemId: 'lesson-1', reason: 'Already familiar' });
-  const closed = await recordProgress(root, { operationId: 'finish', expectedRevision: 4, action: 'finish' });
+  const finishRequest = { operationId: 'finish', expectedRevision: 4, action: 'finish' };
+  const closed = await recordProgress(root, finishRequest);
   assert.equal(closed.state.phase, 'closed_with_exceptions');
   assert.ok(closed.state.unresolvedTopics.some((item) => item.includes('quiz-1')));
   assert.ok(closed.state.unresolvedTopics.some((item) => item.includes('lesson-1')));
+  assert.equal((await recordProgress(root, skipRequest)).revision, 3);
+  assert.equal((await recordProgress(root, finishRequest)).revision, 5);
 });
 
 test('a fresh process resumes pending, submitted, graded and skipped work from committed records', async (t) => {

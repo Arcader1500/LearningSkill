@@ -99,3 +99,31 @@ test('post-commit notes conflict reports committed progress separately', async (
   assert.equal(result.result.notesStatus.ok, false);
   assert.equal(result.result.notesStatus.error.code, 'CONFLICT');
 });
+
+test('dispatch projects explicit learner-safe views without leaking arbitrary question fields', async (t) => {
+  const { root } = await fixture(t);
+  const init = await call(t, root, 'course.init', { courseId: 'course-1', learnerContext: {}, goal: 'Learn', prerequisites: [], readingRateWpm: 238, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }], assessments: {}, assignments: {} }, { revision: 0 });
+  assert.equal(init.child.status, 0, init.child.stdout);
+  const prepared = await call(t, root, 'assessment.prepare', { assessmentId: 'quiz-private', objective: 'Explain layers', outcomeIds: ['outcome-1'], rubricRevision: 1, questions: [{ questionId: 'q1', prompt: 'Why?', type: 'free_text', expectedReasoning: 'PRIVATE_REASONING', solution: 'PRIVATE_SOLUTION' }], criteria: [{ criterionId: 'reasoning', maxPoints: 2, essential: true, independenceRequired: true }], keyPath: 'assessments/private-key.md', key: 'PRIVATE_KEY' }, { revision: 1 });
+  assert.equal(prepared.child.status, 0, prepared.child.stdout);
+  for (const marker of ['PRIVATE_REASONING', 'PRIVATE_SOLUTION', 'PRIVATE_KEY', 'private-key.md']) assert.doesNotMatch(prepared.child.stdout, new RegExp(marker));
+  assert.equal(prepared.result.state.assessments['quiz-private'].objective, 'Explain layers');
+  assert.equal(prepared.result.state.assessments['quiz-private'].questions[0].prompt, 'Why?');
+  assert.equal(Object.hasOwn(prepared.result.state.assessments['quiz-private'].questions[0], 'expectedReasoning'), false);
+  assert.equal(Object.hasOwn(prepared.result.state.assessments['quiz-private'], 'keyPath'), false);
+  assert.equal(Object.hasOwn(prepared.result.state.assessments['quiz-private'], 'criteria'), false);
+  const presented = await call(t, root, 'question.present', { assessmentId: 'quiz-private', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1' }, { revision: 2 });
+  assert.equal(presented.child.status, 0, presented.child.stdout);
+  assert.doesNotMatch(presented.child.stdout, /PRIVATE_REASONING|PRIVATE_SOLUTION|PRIVATE_KEY/);
+  const resumed = await call(t, root, 'course.resume');
+  assert.equal(resumed.child.status, 0, resumed.child.stdout);
+  assert.doesNotMatch(resumed.child.stdout, /PRIVATE_REASONING|PRIVATE_SOLUTION|PRIVATE_KEY/);
+  assert.equal(resumed.result.progress.assessments['quiz-private'].objective, 'Explain layers');
+  await call(t, root, 'answer.record', { assessmentId: 'quiz-private', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1', response: 'They preserve changes.' }, { revision: 3 });
+  await call(t, root, 'assistance.record', { attemptId: 'try-1', assistance: 'none', summary: 'No help.' }, { revision: 4 });
+  const graded = await call(t, root, 'attempt.grade', { assessmentId: 'quiz-private', attemptId: 'try-1', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: 'answer-try-1', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Good reasoning.', evidenceRefs: ['answer-try-1'], independent: true }], feedback: 'Passed.' }, { revision: 5 });
+  assert.equal(graded.child.status, 0, graded.child.stdout);
+  assert.equal(graded.result.state.assessments['quiz-private'].latestGrade.criteria[0].feedback, 'Good reasoning.');
+  assert.deepEqual(graded.result.state.attempts['try-1'].evidence.map((item) => item.evidenceId), ['answer-try-1']);
+  assert.doesNotMatch(graded.child.stdout, /PRIVATE_REASONING|PRIVATE_SOLUTION|PRIVATE_KEY/);
+});

@@ -67,6 +67,12 @@ export function validateState(state) {
   for (const lesson of state.lessons) {
     assert(object(lesson) && Array.isArray(lesson.outcomeIds), 'Invalid lesson definition');
     uniqueIds(lesson.outcomeIds, 'lesson outcomes');
+    for (const key of ['requiredAssessmentIds','requiredAssignmentIds','excludedOutcomeIds']) if (lesson[key] !== undefined) {
+      assert(Array.isArray(lesson[key]), `${key} must be an array`);
+      uniqueIds(lesson[key], key);
+    }
+    if (lesson.excludedOutcomeIds) assert(lesson.excludedOutcomeIds.every((id) => lesson.outcomeIds.includes(id)), 'Excluded outcomes must belong to their lesson');
+    for (const id of lesson.requiredAssessmentIds ?? []) if (state.assessments[id] && typeof state.assessments[id] === 'object') assert(state.assessments[id].outcomeIds.some((outcomeId) => lesson.outcomeIds.includes(outcomeId)), `Required assessment ${id} is not linked to this lesson`);
     for (const outcomeId of lesson.outcomeIds) {
       assert(!declaredOutcomes.has(outcomeId), `Duplicate course outcome: ${outcomeId}`);
       declaredOutcomes.add(outcomeId);
@@ -78,6 +84,7 @@ export function validateState(state) {
     const status = typeof item === 'string' ? item : item?.state;
     assert(WORK.has(status), 'Invalid assessment/assignment state');
     if (typeof item === 'object' && item !== null && item.criteria !== undefined) validateCriteria(item.criteria);
+    if (typeof item === 'object' && item !== null && item.required !== undefined) assert(typeof item.required === 'boolean', `${id} required flag must be boolean`);
     if (index === state.assessments && typeof item === 'object' && item !== null) {
       assert(Array.isArray(item.outcomeIds) && item.outcomeIds.length > 0 && item.outcomeIds.every(safeId), `Assessment ${id} has invalid outcome references`);
       if (item.assignmentId !== undefined) assert(safeId(item.assignmentId) && Object.hasOwn(state.assignments, item.assignmentId), `Assessment ${id} references missing assignment`);
@@ -95,15 +102,19 @@ export function validateState(state) {
   if (state.courseManifest) validateManifest(state.courseManifest);
   if (state.materialRefs.length) validateMaterials(state.materialRefs);
   if (state.courseManifest) assert(JSON.stringify(state.materialRefs) === JSON.stringify(state.courseManifest.materials), 'Material references differ from the current course manifest');
+  assert(Array.isArray(state.artifactRefs), 'Invalid artifact references');
+  const artifactPaths = new Set();
+  for (const ref of state.artifactRefs) {
+    assert(object(ref) && typeof ref.path === 'string' && ref.path.length > 0 && !ref.path.startsWith('/') && !ref.path.includes('\\') && !ref.path.split('/').some((part) => part === '..' || part === '.' || part === '') && /^[a-f0-9]{64}$/i.test(ref.sha256), 'Invalid artifact reference');
+    assert(!artifactPaths.has(ref.path), 'Duplicate artifact reference path');
+    artifactPaths.add(ref.path);
+  }
   assert(Array.isArray(state.recordRefs) && object(state.operationFingerprints) && Array.isArray(state.unresolvedTopics), 'Invalid history/projection fields');
   uniqueIds(state.recordRefs.map((x) => x?.recordId), 'recordRefs');
   for (const ref of state.recordRefs) assert(object(ref) && safeId(ref.recordId) && typeof ref.path === 'string' && !ref.path.startsWith('/') && !ref.path.split(/[\\/]/).includes('..') && /^[a-f0-9]{64}$/i.test(ref.sha256), 'Invalid record reference');
   for (const topic of state.unresolvedTopics) assert(typeof topic === 'string' && topic.length > 0, 'Invalid unresolved topic');
   assert(typeof state.nextAction === 'string' && (state.notesProjection === null || (object(state.notesProjection) && Number.isSafeInteger(state.notesProjection.revision) && /^[a-f0-9]{64}$/i.test(state.notesProjection.sha256))), 'Invalid next action or notes projection');
-  if (state.phase === 'completed') {
-    assert(state.unresolvedTopics.length === 0, 'Completed course has unresolved requirements');
-    assert(Object.values(state.assessments).every((x) => ['passed', 'not_required'].includes(typeof x === 'string' ? x : x.state)) && Object.values(state.assignments).every((x) => ['passed', 'not_required'].includes(typeof x === 'string' ? x : x.state)), 'Completed course has unfinished work');
-  }
+  if (state.phase === 'completed') assert(completionProjection(state).ready, 'Completed course has unfinished required outcomes or unresolved requirements');
   if (state.phase === 'closed_with_exceptions') assert(state.unresolvedTopics.length > 0, 'Closing with exceptions requires unresolved requirements');
   return state;
 }
@@ -159,7 +170,7 @@ function grade(state, record) {
   let linkedAssignment;
   if (definition.assignmentId) {
     linkedAssignment = state.assignments[definition.assignmentId];
-    if (!linkedAssignment || typeof linkedAssignment !== 'object' || linkedAssignment.state !== 'submitted' || linkedAssignment.latestSubmissionAttemptId !== p.attemptId || linkedAssignment.snapshotPath !== attempt.snapshotPath || linkedAssignment.snapshotSha256 !== attempt.snapshotSha256 || !attempt.submissionEvidenceId) invalid('Linked assignment has no matching submitted snapshot for this attempt', 'INVALID_GRADE');
+    if (!linkedAssignment || typeof linkedAssignment !== 'object' || !['submitted','passed','needs_review'].includes(linkedAssignment.state) || linkedAssignment.latestSubmissionAttemptId !== p.attemptId || linkedAssignment.snapshotPath !== attempt.snapshotPath || linkedAssignment.snapshotSha256 !== attempt.snapshotSha256 || !attempt.submissionEvidenceId) invalid('Linked assignment has no matching latest submitted snapshot for this attempt', 'INVALID_GRADE');
     if (!p.criteria.every((criterion) => criterion.evidenceRefs.includes(attempt.submissionEvidenceId))) invalid('Every linked assignment criterion must cite its submitted snapshot evidence', 'INVALID_GRADE');
   }
   if (p.assistance !== attempt.assistance) invalid('Grade assistance differs from the recorded attempt', 'INVALID_GRADE');
@@ -189,6 +200,87 @@ function grade(state, record) {
   const old = typeof assessment === 'string' ? {} : assessment;
   state.assessments[p.assessmentId] = { ...old, state: passed ? 'passed' : 'needs_review', latestAttemptId: p.attemptId, latestGrade: { points: total, maxPoints: maximum, percentage: maximum ? total / maximum * 100 : 0, feedback: p.feedback, criteria: p.criteria.map((r) => ({ criterionId: r.criterionId, points: r.points, maxPoints: expected.get(r.criterionId).maxPoints, status: r.points === 0 ? 'unmet' : r.points === expected.get(r.criterionId).maxPoints ? 'met' : 'partial', feedback: r.feedback, independent: r.independent, evidenceRefs: [...r.evidenceRefs] })) }, history: [...(old.history ?? []), { attemptId: p.attemptId, kind: 'attempt_graded', contentRevision: record.contentRevision }] };
   if (linkedAssignment) state.assignments[definition.assignmentId] = { ...linkedAssignment, state: passed ? 'passed' : 'needs_review', latestGradeAttemptId: p.attemptId, history: [...(linkedAssignment.history ?? []), { attemptId: p.attemptId, kind: 'attempt_graded', rubricRevision: p.rubricRevision, snapshotSha256: attempt.snapshotSha256 }] };
+}
+
+function abandonPending(state) {
+  if (!state.pendingQuestion) return;
+  const attempt = state.attempts[state.pendingQuestion.attemptId];
+  if (attempt?.response === null) attempt.state = 'abandoned';
+  state.pendingQuestion = null;
+}
+
+function workStatus(item) { return typeof item === 'string' ? item : item?.state; }
+
+function independentPass(item) {
+  if (workStatus(item) !== 'passed') return false;
+  const criteria = item?.latestGrade?.criteria;
+  if (!Array.isArray(criteria)) return true;
+  const rubric = new Map((item.criteria ?? []).map((criterion) => [criterion.criterionId, criterion]));
+  return criteria.every((result) => {
+    const criterion = rubric.get(result.criterionId);
+    return !criterion?.essential || !criterion.independenceRequired || result.independent === true;
+  });
+}
+
+function completionProjection(state) {
+  const outcomes = [];
+  const unresolved = [...state.unresolvedTopics];
+  const requiredAssignments = new Set();
+  for (const lesson of state.lessons) {
+    for (const id of lesson.requiredAssignmentIds ?? []) requiredAssignments.add(id);
+    const excluded = new Set(lesson.excludedOutcomeIds ?? []);
+    const declaredIds = lesson.requiredAssessmentIds;
+    const explicitlyNoQuiz = Array.isArray(declaredIds) && declaredIds.length === 0;
+    for (const outcomeId of lesson.outcomeIds) {
+      let status = 'not_required';
+      if (lesson.readingState === 'skipped' || state.reading[lesson.lessonId] === 'skipped') status = 'skipped';
+      else if (excluded.has(outcomeId) || explicitlyNoQuiz) status = 'not_required';
+      else {
+        const candidateEntries = Object.entries(state.assessments).filter(([id, assessment]) => typeof assessment === 'object' ? assessment.outcomeIds?.includes(outcomeId) : declaredIds?.includes(id));
+        const candidates = candidateEntries.map(([, assessment]) => assessment);
+        for (const assessment of candidates) if (assessment.required !== false && assessment.assignmentId) requiredAssignments.add(assessment.assignmentId);
+        const assessmentIds = Array.isArray(declaredIds) ? declaredIds : candidateEntries.map(([id]) => id);
+        const missingIds = assessmentIds.filter((id) => !Object.hasOwn(state.assessments, id));
+        status = missingIds.length ? 'pending'
+          : candidates.some(independentPass) ? 'passed'
+            : candidates.length > 0 && candidates.every((item) => workStatus(item) === 'not_required') ? 'not_required'
+              : candidates.length > 0 && candidates.every((item) => ['skipped','not_required'].includes(workStatus(item))) ? 'skipped'
+                : 'pending';
+        if (missingIds.length) unresolved.push(...missingIds.map((id) => `Missing required assessment: ${id}`));
+        for (const id of assessmentIds) {
+          const item = state.assessments[id];
+          if (item?.assignmentId) requiredAssignments.add(item.assignmentId);
+        }
+      }
+      outcomes.push({ lessonId: lesson.lessonId, outcomeId, status });
+      if (status === 'pending') unresolved.push(`Outcome not independently demonstrated: ${lesson.lessonId}/${outcomeId}`);
+      if (status === 'skipped') unresolved.push(`Skipped required outcome: ${lesson.lessonId}/${outcomeId}`);
+    }
+    if (state.reading[lesson.lessonId] === 'skipped') unresolved.push(`Skipped lesson: ${lesson.lessonId}`);
+  }
+  for (const id of requiredAssignments) {
+    const item = state.assignments[id];
+    const status = item === undefined ? 'missing' : workStatus(item);
+    if (!['passed','not_required'].includes(status)) unresolved.push(`${status === 'skipped' ? 'Skipped required assignment' : status === 'missing' ? 'Missing required assignment' : 'Required assignment remains'}: ${id}`);
+  }
+  const outcomeStates = new Map(outcomes.map((outcome) => [`${outcome.lessonId}/${outcome.outcomeId}`, outcome.status]));
+  for (const [id, item] of Object.entries(state.assessments)) {
+    const status = workStatus(item);
+    if (['passed','not_required'].includes(status)) continue;
+    const linkedOutcomes = typeof item === 'object' ? item.outcomeIds ?? [] : [];
+    const resolvedByComparable = linkedOutcomes.length > 0 && linkedOutcomes.every((outcomeId) => {
+      const lesson = state.lessons.find((candidate) => candidate.outcomeIds.includes(outcomeId));
+      return lesson && outcomeStates.get(`${lesson.lessonId}/${outcomeId}`) === 'passed';
+    });
+    const explicitlyExcluded = linkedOutcomes.length > 0 && linkedOutcomes.every((outcomeId) => {
+      const lesson = state.lessons.find((candidate) => candidate.outcomeIds.includes(outcomeId));
+      return lesson && ((lesson.excludedOutcomeIds ?? []).includes(outcomeId) || (Array.isArray(lesson.requiredAssessmentIds) && lesson.requiredAssessmentIds.length === 0));
+    });
+    if (item?.required !== false && !resolvedByComparable && !explicitlyExcluded) unresolved.push(`${status === 'skipped' ? 'Skipped required assessment' : 'Required assessment remains'}: ${id}`);
+  }
+  for (const [id, item] of Object.entries(state.assignments)) if (item?.required !== false && !['passed','not_required'].includes(workStatus(item)) && !requiredAssignments.has(id)) unresolved.push(`${workStatus(item) === 'skipped' ? 'Skipped required assignment' : 'Required assignment remains'}: ${id}`);
+  const uniqueUnresolved = [...new Set(unresolved)];
+  return { complete: ['active','completed'].includes(state.phase) && uniqueUnresolved.length === 0, ready: uniqueUnresolved.length === 0, outcomes, requiredAssignmentIds: [...requiredAssignments], unresolved: uniqueUnresolved };
 }
 
 export function reduceState(prior, records) {
@@ -224,11 +316,13 @@ export function reduceState(prior, records) {
           if (typeof p.nextAction === 'string') state.nextAction = p.nextAction;
           break;
         case 'assessment_prepared':
-          if (state.assessments[p.assessmentId]) invalid('Assessment ID already exists', 'CONFLICT');
+          const placeholder = state.assessments[p.assessmentId];
+          if (placeholder && (typeof placeholder !== 'object' || placeholder.state !== 'pending' || placeholder.criteria || placeholder.questions || placeholder.activeAttemptId)) invalid('Assessment rubric and questions are already fixed', 'CONFLICT');
           if (!p.outcomeIds.every((outcomeId) => state.lessons.some((lesson) => lesson.outcomeIds.includes(outcomeId)))) invalid('Assessment references an undeclared lesson outcome', 'CORRUPT_STATE');
           if (p.assignmentId !== undefined && !Object.hasOwn(state.assignments, p.assignmentId)) invalid('Assessment references an undeclared assignment', 'CORRUPT_STATE');
+          if (placeholder && (JSON.stringify(placeholder.outcomeIds) !== JSON.stringify(p.outcomeIds) || (placeholder.assignmentId !== undefined && p.assignmentId !== placeholder.assignmentId))) invalid('Prepared assessment differs from its declared placeholder links', 'CONFLICT');
           validateCriteria(p.criteria);
-          state.assessments[p.assessmentId] = { state: 'pending', assessmentId: p.assessmentId, outcomeIds: p.outcomeIds, ...(p.assignmentId === undefined ? {} : { assignmentId: p.assignmentId }), rubricRevision: p.rubricRevision, contentRevision: record.contentRevision, objective: p.objective, questions: p.questions, keyPath: p.keyPath, criteria: p.criteria };
+          state.assessments[p.assessmentId] = { ...(placeholder ?? {}), state: 'pending', assessmentId: p.assessmentId, outcomeIds: p.outcomeIds, ...((p.assignmentId ?? placeholder?.assignmentId) === undefined ? {} : { assignmentId: p.assignmentId ?? placeholder.assignmentId }), rubricRevision: p.rubricRevision, contentRevision: record.contentRevision, objective: p.objective, questions: p.questions, keyPath: p.keyPath, criteria: p.criteria };
           break;
         case 'question_presented':
           const savedAssessment = state.assessments[p.assessmentId];
@@ -261,19 +355,25 @@ export function reduceState(prior, records) {
           break;
         case 'item_skipped': {
           if (p.itemType === 'lesson') {
-            if (!state.lessons.some((lesson) => lesson.lessonId === p.itemId)) invalid('Skip references missing lesson', 'CORRUPT_STATE');
+            const lesson = state.lessons.find((item) => item.lessonId === p.itemId);
+            if (!lesson) invalid('Skip references missing lesson', 'CORRUPT_STATE');
             state.reading[p.itemId] = 'skipped';
+            if (state.pendingQuestion && lesson.outcomeIds.some((id) => state.attempts[state.pendingQuestion.attemptId]?.outcomeIds.includes(id))) abandonPending(state);
             break;
           }
           const map = p.itemType === 'assessment' ? state.assessments : p.itemType === 'assignment' ? state.assignments : null;
           if (!map || !(p.itemId in map)) invalid('Skip references missing work item', 'CORRUPT_STATE');
-          map[p.itemId] = typeof map[p.itemId] === 'object' ? { ...map[p.itemId], state: 'skipped' } : 'skipped'; break;
+          map[p.itemId] = typeof map[p.itemId] === 'object' ? { ...map[p.itemId], state: 'skipped' } : 'skipped';
+          if (state.pendingQuestion) {
+            const attempt = state.attempts[state.pendingQuestion.attemptId];
+            if (p.itemType === 'assessment' && attempt?.assessmentId === p.itemId || p.itemType === 'assignment' && attempt?.assignmentId === p.itemId) abandonPending(state);
+          }
+          break;
         }
         case 'unresolved_topic_updated': state.unresolvedTopics = p.topics; if (!Array.isArray(p.topics)) invalid('Topics must be an array'); break;
         case 'course_closed':
           if (p.phase === 'completed') {
-            const allDone = [...Object.values(state.assessments), ...Object.values(state.assignments)].every((x) => ['passed', 'not_required'].includes(typeof x === 'string' ? x : x.state));
-            if (!allDone || state.unresolvedTopics.length) invalid('Course requirements are not complete', 'NOT_READY');
+            if (state.phase !== 'active' || !completionProjection(state).ready) invalid('Course requirements are not complete', 'NOT_READY');
           } else if (p.phase === 'closed_with_exceptions') {
             if (!Array.isArray(p.unresolved) || !p.unresolved.length) invalid('Close with exceptions must enumerate unresolved work', 'NOT_READY');
             state.unresolvedTopics = p.unresolved;
@@ -315,5 +415,5 @@ export function reduceState(prior, records) {
 
 export function deriveProgress(state, records = []) {
   validateState(state);
-  return { phase: state.phase, revision: state.revision, contentRevision: state.contentRevision, reading: { ...state.reading }, assessments: structuredClone(state.assessments), assignments: structuredClone(state.assignments), unresolvedTopics: [...state.unresolvedTopics], nextAction: state.nextAction, recordCount: records.length || state.recordRefs.length };
+  return { phase: state.phase, revision: state.revision, contentRevision: state.contentRevision, reading: { ...state.reading }, assessments: structuredClone(state.assessments), assignments: structuredClone(state.assignments), unresolvedTopics: [...state.unresolvedTopics], completion: completionProjection(state), nextAction: state.nextAction, recordCount: records.length || state.recordRefs.length };
 }

@@ -16,6 +16,8 @@ test('snapshots an explicitly selected external directory as an immutable, deter
   await mkdir(path.join(source, 'nested'));
   const original = Buffer.from('learner work\n');
   await writeFile(path.join(source, 'answer.md'), original);
+  const selectedManifest = Buffer.from('learner-authored manifest data\n');
+  await writeFile(path.join(source, 'manifest.json'), selectedManifest);
   await writeFile(path.join(source, 'nested', 'proof.txt'), 'evidence');
   const init = { schemaVersion: 1, recordId: 'init', operationId: 'init-op', kind: 'course_initialized', timestamp: new Date().toISOString(), courseId: 'course-1', revision: 1, contentRevision: 1, fingerprint: 'init', payload: { initialState: state({ phase: 'active' }) } };
   init.payload.initialState.lessons = [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }];
@@ -23,18 +25,21 @@ test('snapshots an explicitly selected external directory as an immutable, deter
   await commit(root, { operationId: 'init-op', expectedRevision: 0, records: [init] });
   await prepareAssessment(root, { operationId: 'prepare', expectedRevision: 1, assessmentId: 'assignment-check', assignmentId: 'assignment-1', outcomeIds: ['outcome-1'], objective: 'Demonstrate outcome', rubricRevision: 1, questions: [{ questionId: 'submission', prompt: 'Submit the completed work.', type: 'free_text' }], criteria: [{ criterionId: 'complete', maxPoints: 1, essential: true, independenceRequired: true }], key: 'Private rubric notes', keyPath: 'assessments/assignment-check-key.md' });
   await presentQuestion(root, { operationId: 'present', expectedRevision: 2, assessmentId: 'assignment-check', questionId: 'submission', attemptId: 'attempt-1', presentationToken: 'token-1' });
-  const result = await submitWork(root, { operationId: 'submit', expectedRevision: 3, assessmentId: 'assignment-check', assignmentId: 'assignment-1', attemptId: 'attempt-1', sourcePath: source, provenance: 'learner_supplied' });
+  const submissionRequest = { operationId: 'submit', expectedRevision: 3, assessmentId: 'assignment-check', assignmentId: 'assignment-1', attemptId: 'attempt-1', sourcePath: source, provenance: 'learner_supplied' };
+  const result = await submitWork(root, submissionRequest);
   const evidence = result.state.attempts['attempt-1'].evidence.at(-1);
   assert.equal(evidence.provenance, 'learner_supplied');
   assert.match(evidence.snapshotSha256, /^[a-f0-9]{64}$/);
   assert.equal(sha(await readFile(path.join(source, 'answer.md'))), sha(original));
   const manifest = JSON.parse(await readFile(path.join(root, evidence.snapshotPath), 'utf8'));
-  assert.deepEqual(manifest.files.map((f) => f.path), ['answer.md', 'nested/proof.txt']);
+  assert.deepEqual(manifest.files.map((f) => f.path), ['answer.md', 'manifest.json', 'nested/proof.txt']);
   assert.equal(manifest.files[0].sha256, sha(original));
-  assert.equal(await readFile(path.join(root, 'submissions', 'assignment-check', 'attempt-1', 'answer.md'), 'utf8'), 'learner work\n');
+  assert.equal(await readFile(path.join(root, 'submissions', 'assignment-check', 'attempt-1', 'files', 'answer.md'), 'utf8'), 'learner work\n');
+  assert.deepEqual(await readFile(path.join(root, 'submissions', 'assignment-check', 'attempt-1', 'files', 'manifest.json')), selectedManifest);
   const graded = await gradeAttempt(root, { operationId: 'grade-submission', expectedRevision: 4, assessmentId: 'assignment-check', assignmentId: 'assignment-1', attemptId: 'attempt-1', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: evidence.evidenceId, provenance: evidence.provenance, snapshotPath: evidence.snapshotPath, snapshotSha256: evidence.snapshotSha256 }], criteria: [{ criterionId: 'complete', points: 1, feedback: 'Submitted evidence reviewed.', evidenceRefs: [evidence.evidenceId], independent: true }], feedback: 'Submission meets the criterion.' });
   assert.equal(graded.state.assignments['assignment-1'].state, 'passed');
   assert.equal(graded.state.assessments['assignment-check'].state, 'passed');
+  assert.equal((await submitWork(root, submissionRequest)).revision, 4);
   await writeFile(path.join(source, 'answer.md'), 'changed learner work\n');
   await assert.rejects(submitWork(root, { operationId: 'submit', expectedRevision: 3, assessmentId: 'assignment-check', assignmentId: 'assignment-1', attemptId: 'attempt-1', sourcePath: source, provenance: 'learner_supplied' }), { code: 'CONFLICT' });
   await presentQuestion(root, { operationId: 'present-file', expectedRevision: 5, assessmentId: 'assignment-check', questionId: 'submission', attemptId: 'attempt-2', presentationToken: 'token-2' });
@@ -57,6 +62,11 @@ test('snapshots an explicitly selected external directory as an immutable, deter
   }), { code: 'CONFLICT' });
   assert.equal(injected, true);
   assert.equal(sha(await readFile(selectedFile)), sha(beforeCapture));
+  await presentQuestion(root, { operationId: 'present-manifest-file', expectedRevision: 7, assessmentId: 'assignment-check', questionId: 'submission', attemptId: 'attempt-3', presentationToken: 'token-3' });
+  const singleManifestFile = await submitWork(root, { operationId: 'submit-manifest-file', expectedRevision: 8, assessmentId: 'assignment-check', assignmentId: 'assignment-1', attemptId: 'attempt-3', sourcePath: path.join(source, 'manifest.json'), provenance: 'learner_supplied' });
+  const manifestEvidence = singleManifestFile.state.attempts['attempt-3'].evidence.at(-1);
+  assert.deepEqual(await readFile(path.join(root, 'submissions', 'assignment-check', 'attempt-3', 'files', 'manifest.json')), selectedManifest);
+  assert.deepEqual(JSON.parse(await readFile(path.join(root, manifestEvidence.snapshotPath), 'utf8')).files.map((file) => file.path), ['manifest.json']);
 });
 
 test('rejects a selected tree containing an escaping symlink before committing', async (t) => {

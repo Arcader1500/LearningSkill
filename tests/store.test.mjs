@@ -1,9 +1,10 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, rm, writeFile, unlink, symlink } from 'node:fs/promises';
+import { mkdtemp, rm, writeFile, unlink, symlink, readFile } from 'node:fs/promises';
 import { spawn } from 'node:child_process';
+import { createHash } from 'node:crypto';
 import path from 'node:path';
-import { commit, readCourse } from '../src/store.mjs';
+import { commit, readCourse, mutationFingerprint, findCommittedOperation } from '../src/store.mjs';
 import { state, record } from './helpers.mjs';
 
 test('commits, reads, appends detached refs, and resolves idempotent retry before stale revision', async (t) => {
@@ -18,6 +19,11 @@ test('commits, reads, appends detached refs, and resolves idempotent retry befor
   const second = record('qa_recorded', {}, { recordId: 'r2', operationId: 'op2', revision: 2 });
   assert.equal((await commit(root, { operationId: 'op2', expectedRevision: 1, records: [second] })).revision, 2);
   assert.equal((await readCourse(root)).records.length, 2);
+  const duplicateDestinations = [{ path: 'snapshots/shared.bin', bytes: Buffer.from('one') }, { path: 'snapshots/./shared.bin', bytes: Buffer.from('two') }];
+  const noArtifact = record('qa_recorded', {}, { recordId: 'dup-1', operationId: 'dup-op', revision: 3 });
+  await assert.rejects(commit(root, { operationId: 'dup-op', expectedRevision: 2, records: [noArtifact], snapshots: duplicateDestinations }), { code: 'INVALID_INPUT' });
+  await assert.rejects(readFile(path.join(root, 'records', 'dup-1.json')), { code: 'ENOENT' });
+  await assert.rejects(readFile(path.join(root, 'snapshots', 'shared.bin')), { code: 'ENOENT' });
   const beforeFault = record('qa_recorded', {}, { recordId: 'fault-1', operationId: 'fault-op', revision: 3 });
   await assert.rejects(commit(root, { operationId: 'fault-op', expectedRevision: 2, records: [beforeFault] }, { fs: { open: async () => { throw Object.assign(new Error('open denied'), { code: 'EACCES' }); } } }), { code: 'IO_ERROR' });
   let persistentAttempts = 0;
@@ -40,7 +46,7 @@ test('commits, reads, appends detached refs, and resolves idempotent retry befor
   const secondRoot = await mkdtemp(path.join(process.cwd(), '.test-tmp-concurrent-'));
   t.after(() => rm(secondRoot, { recursive: true, force: true }));
   const entry = new URL('../src/store.mjs', import.meta.url).href;
-  const runner = `import {commit} from ${JSON.stringify(entry)}; const r={schemaVersion:1,recordId:'race-'+process.pid,operationId:'race-'+process.pid,kind:'course_initialized',timestamp:new Date().toISOString(),courseId:'race-course',revision:1,contentRevision:1,fingerprint:'x',payload:{initialState:{schemaVersion:1,courseId:'race-course',revision:0,contentRevision:1,phase:'draft',learnerContext:{},goal:'g',prerequisites:[],readingRateWpm:238,lessons:[],reading:{},assessments:{},assignments:{},courseManifest:null,materialRefs:[],pendingQuestion:null,attempts:{},recordRefs:[],operationFingerprints:{},unresolvedTopics:[],nextAction:'n',notesProjection:null}}}; try { await commit(process.argv[1],{operationId:r.operationId,expectedRevision:0,records:[r]}); console.log('ok'); } catch(e) { console.log(e.code); }`;
+  const runner = `import {commit} from ${JSON.stringify(entry)}; const r={schemaVersion:1,recordId:'race-'+process.pid,operationId:'race-'+process.pid,kind:'course_initialized',timestamp:new Date().toISOString(),courseId:'race-course',revision:1,contentRevision:1,fingerprint:'x',payload:{initialState:{schemaVersion:1,courseId:'race-course',revision:0,contentRevision:1,phase:'draft',learnerContext:{},goal:'g',prerequisites:[],readingRateWpm:238,lessons:[],reading:{},assessments:{},assignments:{},courseManifest:null,materialRefs:[],artifactRefs:[],pendingQuestion:null,attempts:{},recordRefs:[],operationFingerprints:{},unresolvedTopics:[],nextAction:'n',notesProjection:null}}}; try { await commit(process.argv[1],{operationId:r.operationId,expectedRevision:0,records:[r]}); console.log('ok'); } catch(e) { console.log(e.code); }`;
   const runChild = () => new Promise((resolve, reject) => {
     const child = spawn(process.execPath, ['--input-type=module', '-e', runner, secondRoot], { cwd: process.cwd(), stdio: ['ignore', 'pipe', 'pipe'] });
     let out = ''; let err = ''; child.stdout.on('data', (chunk) => { out += chunk; }); child.stderr.on('data', (chunk) => { err += chunk; });
@@ -61,6 +67,45 @@ test('commits, reads, appends detached refs, and resolves idempotent retry befor
   await assert.rejects(readCourse(root), { code: 'CORRUPT_STATE' });
   await writeFile(path.join(root, 'state.json'), JSON.stringify({ schemaVersion: 999 }));
   await assert.rejects(commit(root, { operationId: 'op2', expectedRevision: 0, records: [stale] }), { code: 'UNSUPPORTED_SCHEMA' });
+});
+
+test('committed operation lookup returns its original revision and rejects changed semantic input', async (t) => {
+  const root = await mkdtemp(path.join(process.cwd(), '.test-tmp-replay-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const init = record('course_initialized', { initialState: state() }, { recordId: 'init', operationId: 'init' });
+  await commit(root, { operationId: 'init', expectedRevision: 0, records: [init] });
+  const semanticInput = { op: 'qa.record', payload: { question: 'Why?', answerSummary: 'Because.' } };
+  const firstSnapshot = { path: 'snapshots/qa-1.txt', bytes: Buffer.from('first') };
+  const fingerprint = await mutationFingerprint('qa-1', semanticInput, [firstSnapshot]);
+  assert.equal(await mutationFingerprint('qa-1', { payload: semanticInput.payload, op: semanticInput.op }, [firstSnapshot]), fingerprint);
+  const qa = record('qa_recorded', semanticInput.payload, { recordId: 'qa-1-record', operationId: 'qa-1', revision: 2 });
+  await commit(root, { operationId: 'qa-1', expectedRevision: 1, records: [qa], semanticInput, snapshots: [firstSnapshot] });
+  const next = record('qa_recorded', { question: 'What?', answerSummary: 'Another answer.' }, { recordId: 'qa-2-record', operationId: 'qa-2', revision: 3 });
+  await commit(root, { operationId: 'qa-2', expectedRevision: 2, records: [next], snapshots: [{ path: 'snapshots/qa-2.txt', bytes: Buffer.from('second') }] });
+  const replay = await findCommittedOperation(root, { operationId: 'qa-1', fingerprint });
+  assert.equal(replay.revision, 2);
+  assert.equal(replay.state.revision, 2);
+  assert.deepEqual(replay.records.map((item) => item.recordId), ['qa-1-record']);
+  assert.deepEqual(replay.state.artifactRefs.map((item) => item.path), ['snapshots/qa-1.txt']);
+  const changed = await mutationFingerprint('qa-1', { op: 'qa.record', payload: { question: 'Why?', answerSummary: 'Changed.' } });
+  await assert.rejects(findCommittedOperation(root, { operationId: 'qa-1', fingerprint: changed }), { code: 'CONFLICT' });
+  const changedSnapshot = await mutationFingerprint('qa-1', semanticInput, [{ path: firstSnapshot.path, bytes: Buffer.from('changed') }]);
+  await assert.rejects(findCommittedOperation(root, { operationId: 'qa-1', fingerprint: changedSnapshot }), { code: 'CONFLICT' });
+});
+
+test('snapshot artifact hashes are checked before reads and mutations', async (t) => {
+  const root = await mkdtemp(path.join(process.cwd(), '.test-tmp-artifacts-'));
+  t.after(() => rm(root, { recursive: true, force: true }));
+  const init = record('course_initialized', { initialState: state() }, { recordId: 'init', operationId: 'init' });
+  const asset = { path: 'assessments/private-key.md', bytes: Buffer.from('secret') };
+  const committed = await commit(root, { operationId: 'init', expectedRevision: 0, records: [init], snapshots: [asset] });
+  assert.deepEqual(committed.state.artifactRefs, [{ path: asset.path, sha256: createHash('sha256').update(asset.bytes).digest('hex') }]);
+  await writeFile(path.join(root, asset.path), 'tampered');
+  const checkpoint = await readFile(path.join(root, 'state.json'));
+  await assert.rejects(readCourse(root), { code: 'CORRUPT_STATE' });
+  const next = record('qa_recorded', {}, { recordId: 'qa-record', operationId: 'qa', revision: 2 });
+  await assert.rejects(commit(root, { operationId: 'qa', expectedRevision: 1, records: [next] }), { code: 'CORRUPT_STATE' });
+  assert.deepEqual(await readFile(path.join(root, 'state.json')), checkpoint);
 });
 
 test('readCourse rejects an escaping checkpoint symlink', async (t) => {

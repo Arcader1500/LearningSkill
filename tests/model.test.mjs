@@ -7,6 +7,8 @@ test('state and typed record envelopes reject unsupported versions and malformed
   expectCode(() => validateState(state({ schemaVersion: 2 })), 'UNSUPPORTED_SCHEMA');
   expectCode(() => validateRecord(record('grade', { attemptId: 'missing' })), 'CORRUPT_STATE');
   expectCode(() => validateState(state({ recordRefs: [{ recordId: 'r', path: '../escape', sha256: 'x' }] })), 'CORRUPT_STATE');
+  expectCode(() => validateState(state({ artifactRefs: [{ path: '../outside.md', sha256: 'a'.repeat(64) }] })), 'CORRUPT_STATE');
+  expectCode(() => validateState(state({ artifactRefs: [{ path: 'key.md', sha256: 'a'.repeat(64) }, { path: 'key.md', sha256: 'b'.repeat(64) }] })), 'CORRUPT_STATE');
   expectCode(() => validateState(state({ lessons: [{ lessonId: 'l' }, { lessonId: 'l' }] })), 'CORRUPT_STATE');
 });
 
@@ -175,4 +177,72 @@ test('assessments link only declared lesson outcomes and assignments stay submit
   assert.equal(graded.assessments['assessment-1'].state, 'passed');
   assert.equal(graded.assignments['assignment-1'].state, 'passed');
   assert.equal(graded.assignments['assignment-1'].history.at(-1).attemptId, 'attempt-1');
+});
+
+test('completion is based on required outcomes, declared work, and active course state', () => {
+  const published = reduceState(state({ phase: 'draft' }), [record('course_published', { manifest: { goal: 'Learn topic', prerequisites: [], scope: { included: ['topic'], excluded: [] }, lessons: [{ lessonId: 'l', outcomeIds: ['o'] }], sources: [], estimates: { readingMinutes: 1, practiceMinutes: 1, setupMinutes: 0 }, materials: [{ path: 'course.md', role: 'course', sha256: '0'.repeat(64) }] } })]);
+  assert.equal(deriveProgress(published).completion.ready, false);
+  expectCode(() => reduceState(published, [record('course_closed', { phase: 'completed' }, { revision: 2 })]), 'NOT_READY');
+
+  const exempt = state({ phase: 'active', lessons: [{ lessonId: 'l1', outcomeIds: ['o1'], requiredAssessmentIds: ['quiz-1'] }], assessments: { 'quiz-1': 'not_required' } });
+  assert.equal(deriveProgress(exempt).completion.complete, true);
+
+  const lesson = { lessonId: 'l1', outcomeIds: ['o1'], requiredAssessmentIds: ['quiz-1'] };
+  const missing = state({ phase: 'active', lessons: [lesson] });
+  assert.equal(deriveProgress(missing).completion.complete, false);
+  expectCode(() => reduceState(missing, [record('course_closed', { phase: 'completed' })]), 'NOT_READY');
+  expectCode(() => reduceState(state({ phase: 'draft', lessons: [lesson], assessments: { 'quiz-1': 'passed' } }), [record('course_closed', { phase: 'completed' })]), 'NOT_READY');
+
+  const passed = state({ phase: 'active', lessons: [lesson], assessments: {
+    'quiz-1': { state: 'needs_review', outcomeIds: ['o1'], rubricRevision: 1, criteria: [{ criterionId: 'c1', maxPoints: 1, essential: true, independenceRequired: true }], latestGrade: { criteria: [{ criterionId: 'c1', points: 1, independent: false }] } },
+    'fresh-quiz': { state: 'passed', outcomeIds: ['o1'], rubricRevision: 1, criteria: [{ criterionId: 'c1', maxPoints: 1, essential: true, independenceRequired: true }], latestGrade: { criteria: [{ criterionId: 'c1', points: 1, independent: true }] } },
+  } });
+  assert.equal(deriveProgress(passed).completion.complete, true);
+  assert.equal(reduceState(passed, [record('course_closed', { phase: 'completed' })]).phase, 'completed');
+  assert.equal(deriveProgress(state({ phase: 'active', assignments: { optional: { state: 'pending', required: false } } })).completion.complete, true);
+});
+
+test('placeholder assessment preparation preserves declared required links and fixed rubrics', () => {
+  const placeholder = { state: 'pending', outcomeIds: ['o1'], required: true };
+  const base = state({ phase: 'active', lessons: [{ lessonId: 'l1', outcomeIds: ['o1'], requiredAssessmentIds: ['quiz-1'] }], assessments: { 'quiz-1': placeholder } });
+  const prepared = reduceState(base, [record('assessment_prepared', { assessmentId: 'quiz-1', outcomeIds: ['o1'] })]);
+  assert.equal(prepared.assessments['quiz-1'].state, 'pending');
+  assert.equal(prepared.assessments['quiz-1'].required, true);
+  const fixed = reduceState(prepared, [record('question_presented', { assessmentId: 'quiz-1', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1', prompt: 'Explain.' }, { revision: 2 })]);
+  expectCode(() => reduceState(fixed, [record('assessment_prepared', { assessmentId: 'quiz-1', criteria: [{ criterionId: 'changed', maxPoints: 2, essential: true, independenceRequired: false }] }, { revision: 3 })]), 'CONFLICT');
+});
+
+test('skipping active work cancels its token without erasing the unanswered attempt', () => {
+  const initial = state({ phase: 'active', lessons: [{ lessonId: 'l1', outcomeIds: ['o1'], requiredAssessmentIds: ['a1'] }], assessments: { a1: { state: 'pending', outcomeIds: ['o1'], rubricRevision: 1, criteria: [{ criterionId: 'c1', maxPoints: 1, essential: true, independenceRequired: true }], questions: [{ questionId: 'q1', prompt: 'Explain.', type: 'free_text' }] } } });
+  const presented = reduceState(initial, [record('question_presented', { assessmentId: 'a1', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1', prompt: 'Explain.' })]);
+  const skipped = reduceState(presented, [record('item_skipped', { itemType: 'assessment', itemId: 'a1', reason: 'Skip for now' }, { revision: 2 })]);
+  assert.equal(skipped.pendingQuestion, null);
+  assert.equal(skipped.attempts['try-1'].response, null);
+  assert.equal(skipped.attempts['try-1'].state, 'abandoned');
+  expectCode(() => reduceState(skipped, [record('answer_recorded', { assessmentId: 'a1', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1', response: 'late', evidenceId: 'ev-1' }, { revision: 3 })]), 'STALE_QUESTION');
+  assert.equal(deriveProgress(skipped).completion.complete, false);
+
+  for (const item of [{ itemType: 'assignment', itemId: 'assignment-1' }, { itemType: 'lesson', itemId: 'l1' }]) {
+    const linked = state({ phase: 'active', lessons: [{ lessonId: 'l1', outcomeIds: ['o1'] }], assignments: { 'assignment-1': 'pending' }, assessments: { a1: { state: 'pending', assignmentId: 'assignment-1', outcomeIds: ['o1'], rubricRevision: 1, criteria: [{ criterionId: 'c1', maxPoints: 1, essential: true, independenceRequired: true }], questions: [{ questionId: 'q1', prompt: 'Explain.', type: 'free_text' }] } } });
+    const started = reduceState(linked, [record('question_presented', { assessmentId: 'a1', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1', prompt: 'Explain.' })]);
+    const canceled = reduceState(started, [record('item_skipped', { ...item, reason: 'Skip this work' }, { revision: 2 })]);
+    assert.equal(canceled.pendingQuestion, null);
+    assert.equal(canceled.attempts['try-1'].response, null);
+    expectCode(() => reduceState(canceled, [record('answer_recorded', { assessmentId: 'a1', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1', response: 'late', evidenceId: 'ev-1' }, { revision: 3 })]), 'STALE_QUESTION');
+  }
+});
+
+test('assignment regrade appends history only while grading the latest submitted snapshot', () => {
+  const criterion = { criterionId: 'essential', maxPoints: 2, essential: true, independenceRequired: true };
+  const initial = state({ phase: 'active', lessons: [{ lessonId: 'l1', outcomeIds: ['o1'] }], assignments: { assignment: 'pending' } });
+  const prepared = reduceState(initial, [record('assessment_prepared', { assessmentId: 'a1', assignmentId: 'assignment', outcomeIds: ['o1'], criteria: [criterion] })]);
+  const presented = reduceState(prepared, [record('question_presented', { assessmentId: 'a1', questionId: 'q1', attemptId: 'try-1', presentationToken: 'token-1', prompt: 'Explain.' }, { revision: 2 })]);
+  const submitted = reduceState(presented, [record('submission_recorded', { assessmentId: 'a1', assignmentId: 'assignment', attemptId: 'try-1', evidenceId: 'sub-1', snapshotPath: 'submissions/a.txt', snapshotSha256: 'a'.repeat(64), provenance: 'learner_supplied' }, { revision: 3 })]);
+  const makeGrade = (revision, recordId, points = 2) => record('attempt_graded', { assessmentId: 'a1', attemptId: 'try-1', rubricRevision: 1, assistance: 'none', feedback: 'Reviewed again.', evidence: [{ evidenceId: 'sub-1', provenance: 'learner_supplied', snapshotPath: 'submissions/a.txt', snapshotSha256: 'a'.repeat(64) }], criteria: [{ criterionId: 'essential', points, feedback: 'Reviewed.', evidenceRefs: ['sub-1'], independent: true }], snapshotPath: 'submissions/a.txt', snapshotSha256: 'a'.repeat(64) }, { revision, recordId });
+  const graded = reduceState(submitted, [makeGrade(4, 'grade-1')]);
+  const regraded = reduceState(graded, [makeGrade(5, 'grade-2', 1)]);
+  assert.equal(regraded.assignments.assignment.history.length, 2);
+  assert.equal(regraded.assignments.assignment.state, 'needs_review');
+  const superseded = { ...graded, assignments: { assignment: { ...graded.assignments.assignment, latestSubmissionAttemptId: 'newer-attempt' } } };
+  expectCode(() => reduceState(superseded, [makeGrade(5, 'grade-superseded')]), 'INVALID_GRADE');
 });

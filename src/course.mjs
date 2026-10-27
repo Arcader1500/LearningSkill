@@ -1,7 +1,7 @@
 import { createHash, randomUUID } from 'node:crypto';
 import { lstat, readFile, readdir } from 'node:fs/promises';
 import path from 'node:path';
-import { commit, readCourse } from './store.mjs';
+import { commit, findCommittedOperation, mutationFingerprint, readCourse } from './store.mjs';
 import { fail } from './errors.mjs';
 import { resolveContained } from './paths.mjs';
 import { renderClassnotes } from './notes.mjs';
@@ -12,6 +12,17 @@ const id = () => randomUUID().replaceAll('-', '');
 const isId = (value) => typeof value === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(value);
 const isPlain = (value) => value !== null && typeof value === 'object' && !Array.isArray(value);
 const blocked = (state) => ['completed', 'closed_with_exceptions'].includes(state.phase);
+
+function semanticInput(operation, request) {
+  const input = { ...request };
+  for (const key of ['operationId', 'expectedRevision', 'protocolVersion', 'op', 'workspaceRoot', 'courseRoot']) delete input[key];
+  return { operation, request: input };
+}
+
+async function findReplay(root, request, input) {
+  const fingerprint = await mutationFingerprint(request.operationId, input);
+  return findCommittedOperation(root, { operationId: request.operationId, fingerprint });
+}
 
 function envelope(state, request, kind, payload) {
   const revision = (state?.revision ?? 0) + 1;
@@ -37,6 +48,9 @@ async function hasCheckpoint(root) {
 }
 
 export async function initializeCourse(root, request) {
+  const semantic = semanticInput('course.init', request);
+  const replay = await findReplay(root, request, semantic);
+  if (replay) return renderAfter(root, replay);
   if (await hasCheckpoint(root)) {
     try { await readCourse(root); fail('CONFLICT', 'Course is already initialized'); }
     catch (error) { if (error.code === 'CONFLICT') throw error; throw error; }
@@ -48,11 +62,11 @@ export async function initializeCourse(root, request) {
     prerequisites: request.prerequisites, readingRateWpm: request.readingRateWpm,
     lessons: request.lessons, reading: Object.fromEntries(request.lessons.map((lesson) => [lesson.lessonId, 'not_started'])),
     assessments: request.assessments ?? {}, assignments: request.assignments ?? {}, pendingQuestion: null,
-    attempts: {}, courseManifest: null, materialRefs: [], recordRefs: [], operationFingerprints: {}, unresolvedTopics: [],
+    attempts: {}, courseManifest: null, materialRefs: [], artifactRefs: [], recordRefs: [], operationFingerprints: {}, unresolvedTopics: [],
     nextAction: request.nextAction ?? 'Prepare and publish course materials', notesProjection: null,
   };
   const record = envelope(null, request, 'course_initialized', { initialState, nextAction: initialState.nextAction });
-  const result = await commit(root, { ...request, records: [record] });
+  const result = await commit(root, { ...request, semanticInput: semantic, records: [record] });
   return renderAfter(root, result);
 }
 
@@ -103,6 +117,9 @@ async function checkLinks(root, sourcePath, content) {
 }
 
 export async function publishCourse(root, request) {
+  const semantic = semanticInput('course.publish', request);
+  const replay = await findReplay(root, request, semantic);
+  if (replay) return renderAfter(root, replay);
   const { state } = await readCourse(root);
   if (blocked(state)) fail('CONFLICT', 'A closed course cannot be published or revised');
   const manifest = await prepareManifest(root, request.manifest, state);
@@ -112,22 +129,28 @@ export async function publishCourse(root, request) {
     ? { contentRevision: nextContentRevision, materialChanges: manifest.materials.map((item) => item.path), manifest, nextAction: request.nextAction ?? 'Continue with the revised course' }
     : { manifest, nextAction: request.nextAction ?? 'Begin the first lesson' });
   record.contentRevision = nextContentRevision;
-  return renderAfter(root, await commit(root, { ...request, records: [record] }));
+  return renderAfter(root, await commit(root, { ...request, semanticInput: semantic, records: [record] }));
 }
 
 export async function recordQA(root, request) {
+  const semantic = semanticInput('qa.record', request);
+  const replay = await findReplay(root, request, semantic);
+  if (replay) return renderAfter(root, replay);
   const { state } = await readCourse(root);
   if (blocked(state)) fail('CONFLICT', 'Course is closed');
   if (typeof request.question !== 'string' || !request.question.trim() || typeof request.answerSummary !== 'string' || !request.answerSummary.trim()) fail('INVALID_INPUT', 'Q&A requires the learner question and a useful explanation summary');
   if (request.lessonId && !state.lessons.some((lesson) => lesson.lessonId === request.lessonId)) fail('INVALID_INPUT', 'Q&A references an unknown lesson');
   const payload = { question: request.question, answerSummary: request.answerSummary, ...(request.followUp ? { followUp: request.followUp } : {}), ...(request.misconception ? { misconception: request.misconception } : {}), ...(request.lessonId ? { lessonId: request.lessonId } : {}), ...(request.nextAction ? { nextAction: request.nextAction } : {}) };
   const record = envelope(state, request, 'qa_recorded', payload);
-  return renderAfter(root, await commit(root, { ...request, records: [record] }));
+  return renderAfter(root, await commit(root, { ...request, semanticInput: semantic, records: [record] }));
 }
 
 const READING = new Set(['not_started', 'in_progress', 'reported_complete', 'skipped']);
 export async function recordProgress(root, request) {
-  const { state } = await readCourse(root);
+  const semantic = semanticInput('progress.record', request);
+  const replay = await findReplay(root, request, semantic);
+  if (replay) return renderAfter(root, replay);
+  const { state, records } = await readCourse(root);
   if (blocked(state)) fail('CONFLICT', 'Course is closed');
   let kind; let payload;
   if (request.action === 'skip') {
@@ -140,12 +163,11 @@ export async function recordProgress(root, request) {
     kind = 'unresolved_topic_updated'; payload = { topics: request.topics };
   } else if (request.action === 'finish') {
     if (request.unresolved !== undefined && (!Array.isArray(request.unresolved) || request.unresolved.some((item) => typeof item !== 'string' || !item.trim()))) fail('INVALID_INPUT', 'Finish exceptions must be a list of nonempty learner-facing items');
-    const unfinished = [...Object.entries(state.assessments), ...Object.entries(state.assignments)]
-      .filter(([, item]) => !['passed', 'not_required'].includes(typeof item === 'string' ? item : item.state))
-      .map(([itemId, item]) => `${(typeof item === 'string' ? item : item.state) === 'skipped' ? 'Skipped required work' : 'Required work remains'}: ${itemId}`);
-    const skippedLessons = Object.entries(state.reading).filter(([, reading]) => reading === 'skipped').map(([lessonId]) => `Skipped lesson: ${lessonId}`);
-    const unresolved = [...new Set([...(request.unresolved ?? state.unresolvedTopics), ...unfinished, ...skippedLessons])];
-    kind = 'course_closed'; payload = unresolved.length ? { phase: 'closed_with_exceptions', unresolved } : { phase: 'completed' };
+    const completion = deriveProgress(state, records).completion;
+    const unresolved = [...new Set([...(request.unresolved ?? state.unresolvedTopics), ...(state.phase === 'active' ? completion.unresolved : ['Course is not active', ...completion.unresolved])])];
+    kind = 'course_closed'; payload = state.phase === 'active' && completion.ready && !request.unresolved?.length && !state.unresolvedTopics.length
+      ? { phase: 'completed' }
+      : { phase: 'closed_with_exceptions', unresolved: unresolved.length ? unresolved : ['Course requirements are not complete'] };
   } else if (request.action === 'retry') {
     kind = 'attempt_retried'; payload = { assessmentId: request.assessmentId, attemptId: request.attemptId, ...(request.priorAttemptId ? { priorAttemptId: request.priorAttemptId } : {}) };
   } else {
@@ -156,7 +178,7 @@ export async function recordProgress(root, request) {
   }
   if (request.nextAction && kind !== 'progress_recorded') payload.nextAction = request.nextAction;
   const record = envelope(state, request, kind, payload);
-  return renderAfter(root, await commit(root, { ...request, records: [record] }));
+  return renderAfter(root, await commit(root, { ...request, semanticInput: semantic, records: [record] }));
 }
 
 export async function resumeCourse(root) {

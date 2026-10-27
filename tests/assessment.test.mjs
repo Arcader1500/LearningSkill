@@ -23,18 +23,29 @@ test('prepares before presentation, preserves exact options, reoffers with a fre
   const prepared = await prepareAssessment(root, { ...common, operationId: 'prepare', expectedRevision: 1 });
   assert.equal(prepared.state.revision, 2);
   assert.deepEqual(prepared.state.assessments['assessment-1'].questions[0].options, questions[0].options);
-  assert.equal((await prepareAssessment(root, { ...common, operationId: 'prepare', expectedRevision: 1 })).revision, 2);
+  const prepareRequest = { ...common, operationId: 'prepare', expectedRevision: 1 };
+  assert.equal((await prepareAssessment(root, prepareRequest)).revision, 2);
   await assert.rejects(acceptAnswer(root, { operationId: 'absent', expectedRevision: 2, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'missing', response: '' }));
   const shown = await presentQuestion(root, { operationId: 'present', expectedRevision: 2, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-1' });
   assert.equal(shown.state.pendingQuestion.presentationToken, 'token-1');
   await assert.rejects(acceptAnswer(root, { operationId: 'late', expectedRevision: 3, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'stale', response: 'b' }));
-  const reoffered = await presentQuestion(root, { operationId: 'reoffer', expectedRevision: 3, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-2' });
+  const reofferRequest = { operationId: 'reoffer', expectedRevision: 3, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-2' };
+  const reoffered = await presentQuestion(root, reofferRequest);
   assert.deepEqual(reoffered.state.attempts['attempt-1'].options, questions[0].options);
   assert.equal(reoffered.state.pendingQuestion.presentationToken, 'token-2');
-  const answered = await acceptAnswer(root, { operationId: 'answer', expectedRevision: 4, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-2', response: 'b' });
+  const answerRequest = { operationId: 'answer', expectedRevision: 4, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-2', response: 'b' };
+  const answered = await acceptAnswer(root, answerRequest);
   assert.equal(answered.state.attempts['attempt-1'].response, 'b');
+  assert.equal((await acceptAnswer(root, answerRequest)).revision, 5);
+  assert.equal((await presentQuestion(root, reofferRequest)).revision, 4);
   await assert.rejects(acceptAnswer(root, { operationId: 'duplicate', expectedRevision: 5, assessmentId: 'assessment-1', questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-2', response: 'b' }));
   assert.equal((await readCourse(root)).state.revision, 5);
+  const revisionManifest = { goal: 'Learn the subject', prerequisites: [], scope: { included: [], excluded: [] }, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }], sources: [], estimates: { readingMinutes: 0, practiceMinutes: 0, setupMinutes: 0 }, materials: [{ path: 'course.md', role: 'course', sha256: 'a'.repeat(64) }] };
+  const revise = { schemaVersion: 1, recordId: 'revise', operationId: 'revise', kind: 'course_revised', timestamp: new Date().toISOString(), courseId: 'course-1', revision: 6, contentRevision: 2, fingerprint: 'pending-revise', payload: { contentRevision: 2, materialChanges: ['course.md'], manifest: revisionManifest } };
+  await commit(root, { operationId: 'revise', expectedRevision: 5, records: [revise] });
+  const preparedAgain = await prepareAssessment(root, prepareRequest);
+  assert.equal(preparedAgain.revision, 2);
+  assert.equal(preparedAgain.state.contentRevision, 1);
 });
 
 test('records help and rubric evidence; assisted points require a fresh independent check', async (t) => {
@@ -42,7 +53,8 @@ test('records help and rubric evidence; assisted points require a fresh independ
   await prepareAssessment(root, { ...common, operationId: 'prepare', expectedRevision: 1 });
   await presentQuestion(root, { operationId: 'present', expectedRevision: 2, assessmentId: common.assessmentId, questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-1' });
   await acceptAnswer(root, { operationId: 'answer', expectedRevision: 3, assessmentId: common.assessmentId, questionId: 'diagnostic', attemptId: 'attempt-1', presentationToken: 'token-1', response: 'b' });
-  await recordAssistance(root, { operationId: 'help', expectedRevision: 4, attemptId: 'attempt-1', assistance: 'hint', summary: 'Hint given.' });
+  const helpRequest = { operationId: 'help', expectedRevision: 4, attemptId: 'attempt-1', assistance: 'hint', summary: 'Hint given.' };
+  await recordAssistance(root, helpRequest);
   const invalidGrades = [
     { criteria: [] },
     { criteria: [{ criterionId: 'reasoning', points: -1, feedback: 'Invalid.', evidenceRefs: ['answer-attempt-1'], independent: false }] },
@@ -53,16 +65,21 @@ test('records help and rubric evidence; assisted points require a fresh independ
   for (let i = 0; i < invalidGrades.length; i++) await assert.rejects(gradeAttempt(root, { operationId: `invalid-grade-${i}`, expectedRevision: 5, assessmentId: common.assessmentId, attemptId: 'attempt-1', rubricRevision: 1, assistance: 'hint', evidence: [{ evidenceId: 'answer-attempt-1', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Correct.', evidenceRefs: ['answer-attempt-1'], independent: false }], feedback: 'Reviewed.', ...invalidGrades[i] }), { code: 'INVALID_GRADE' });
   const assisted = await gradeAttempt(root, { operationId: 'grade-assisted', expectedRevision: 5, assessmentId: common.assessmentId, attemptId: 'attempt-1', rubricRevision: 1, assistance: 'hint', evidence: [{ evidenceId: 'answer-attempt-1', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Correct with help.', evidenceRefs: ['answer-attempt-1'], independent: false }], feedback: 'Good, with a hint.' });
   assert.equal(assisted.state.assessments['assessment-1'].state, 'needs_review');
+  assert.equal((await recordAssistance(root, helpRequest)).revision, 5);
+  const assistedGrade = { operationId: 'grade-assisted', expectedRevision: 5, assessmentId: common.assessmentId, attemptId: 'attempt-1', rubricRevision: 1, assistance: 'hint', evidence: [{ evidenceId: 'answer-attempt-1', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Correct with help.', evidenceRefs: ['answer-attempt-1'], independent: false }], feedback: 'Good, with a hint.' };
+  assert.equal((await gradeAttempt(root, assistedGrade)).revision, 6);
   await prepareAssessment(root, { ...common, assessmentId: 'assessment-2', questions: [{ ...questions[0], questionId: 'diagnostic-fresh', prompt: 'Apply the same idea to a new example.' }], operationId: 'prepare-fresh', expectedRevision: 6 });
   const fresh = await presentQuestion(root, { operationId: 'present-fresh', expectedRevision: 7, assessmentId: 'assessment-2', questionId: 'diagnostic-fresh', attemptId: 'attempt-2', presentationToken: 'token-2' });
   assert.equal(fresh.state.attempts['attempt-2'].assistance, 'none');
   assert.deepEqual(fresh.state.assessments['assessment-2'].outcomeIds, ['outcome-1']);
   await acceptAnswer(root, { operationId: 'answer-fresh', expectedRevision: 8, assessmentId: 'assessment-2', questionId: 'diagnostic-fresh', attemptId: 'attempt-2', presentationToken: 'token-2', response: 'b independently' });
-  const passed = await gradeAttempt(root, { operationId: 'grade-fresh', expectedRevision: 9, assessmentId: 'assessment-2', attemptId: 'attempt-2', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: 'answer-attempt-2', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Independent.', evidenceRefs: ['answer-attempt-2'], independent: true }], feedback: 'Passed.' });
+  const freshGradeRequest = { operationId: 'grade-fresh', expectedRevision: 9, assessmentId: 'assessment-2', attemptId: 'attempt-2', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: 'answer-attempt-2', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Independent.', evidenceRefs: ['answer-attempt-2'], independent: true }], feedback: 'Passed.' };
+  const passed = await gradeAttempt(root, freshGradeRequest);
   assert.equal(passed.state.assessments['assessment-2'].state, 'passed');
   assert.equal(passed.state.assessments['assessment-2'].latestGrade.percentage, 100);
   assert.equal(passed.state.assessments['assessment-2'].history.length, 1);
   const regraded = await gradeAttempt(root, { operationId: 'regrade-fresh', expectedRevision: 10, assessmentId: 'assessment-2', attemptId: 'attempt-2', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: 'answer-attempt-2', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Confirmed.', evidenceRefs: ['answer-attempt-2'], independent: true }], feedback: 'Regraded.' });
   assert.equal(regraded.state.assessments['assessment-2'].history.length, 2);
+  assert.equal((await gradeAttempt(root, freshGradeRequest)).revision, 10);
   await assert.rejects(gradeAttempt(root, { operationId: 'bad-grade', expectedRevision: 11, assessmentId: 'assessment-2', attemptId: 'attempt-2', rubricRevision: 2, criteria: [], evidence: [], feedback: 'bad' }), { code: 'INVALID_GRADE' });
 });
