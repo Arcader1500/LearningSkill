@@ -1,0 +1,138 @@
+{
+  "schemaVersion": 1,
+  "guidance": "Manual or model-driven cases. Every result is unrun until an operator records direct evidence; fixture replay is not teaching-quality evidence.",
+  "cases": [
+    {
+      "scenarioId": "short-topic-no-padding",
+      "requirementIds": ["R01", "R02"],
+      "initialLearnerContext": { "experience": "basic Linux", "goal": "understand container image layers" },
+      "initialMaterial": "No course exists. Use current official OCI/container references when available.",
+      "startingPrompt": "Teach me container image layers. Keep it focused for my basic Linux background.",
+      "learnerActions": ["Review outline and estimates", "Open the saved core reading", "Ask one follow-up question"],
+      "forbiddenShortcuts": ["Pad the course toward two hours", "Invent current product claims or sources"],
+      "requiredObservedEvidence": ["Saved concise lesson and source links", "Separate reading, practice, and setup estimates", "Actual Q&A and classnotes entry"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "broad-topic-splitting",
+      "requirementIds": ["R01", "R02"],
+      "initialLearnerContext": { "experience": "new to operations", "goal": "learn all cloud infrastructure" },
+      "initialMaterial": "No course exists; request scope is intentionally broad.",
+      "startingPrompt": "Teach me all cloud infrastructure in one course.",
+      "learnerActions": ["Inspect proposed scope", "Ask what is deferred", "Choose one focused first course"],
+      "forbiddenShortcuts": ["Generate an unbounded syllabus", "Hide scope exclusions"],
+      "requiredObservedEvidence": ["Focused course boundary", "Visible follow-on topics and separate estimates"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "reasoning-and-distractor-quality",
+      "requirementIds": ["R05"],
+      "initialLearnerContext": { "experience": "basic Linux" },
+      "initialMaterial": "Published fixture course on image layers.",
+      "startingPrompt": "Quiz me on when image layers can be reused.",
+      "learnerActions": ["Inspect question and choices before answering", "Explain the selected answer"],
+      "forbiddenShortcuts": ["Reveal answer key", "Use implausible or visibly longer correct choice", "Mark correct choice Recommended"],
+      "requiredObservedEvidence": ["Question aligns with saved lesson", "Plausible parallel distractors", "Reasoning requested and key hidden"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "explanation-led-qa-notes",
+      "requirementIds": ["R03"],
+      "initialLearnerContext": { "experience": "basic Linux" },
+      "initialMaterial": "Published lesson with a saved classnotes projection.",
+      "startingPrompt": "Why does changing one Dockerfile instruction affect later layers?",
+      "learnerActions": ["Ask a genuine follow-up", "Resume the course in another chat"],
+      "forbiddenShortcuts": ["Record a hypothetical question as asked", "Replace the learner's question with generic notes"],
+      "requiredObservedEvidence": ["Actual question and useful answer summary committed", "Follow-up and notes survive resume"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "reading-is-not-a-pass",
+      "requirementIds": ["R04", "R16"],
+      "initialLearnerContext": { "experience": "basic Linux" },
+      "initialMaterial": "Published lesson with a required quiz pending.",
+      "startingPrompt": "I finished reading. Mark it complete and continue.",
+      "learnerActions": ["Inspect reading state", "Inspect assessment state"],
+      "forbiddenShortcuts": ["Mark quiz passed without an answer and grade", "Treat elapsed time or navigation as mastery"],
+      "requiredObservedEvidence": ["Reading is reported complete", "Assessment remains pending or in progress with next action visible"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "restricted-tool-headless-fallback",
+      "requirementIds": ["R06", "R07"],
+      "initialLearnerContext": { "surface": "headless or no suitable question tool" },
+      "initialMaterial": "A saved unanswered assessment with exact prompt and options.",
+      "startingPrompt": "Present the next quiz question.",
+      "learnerActions": ["Observe available tools and fallback", "Supply an explicit answer file if needed"],
+      "forbiddenShortcuts": ["Assume a widget exists", "Count tool delivery or default selection as an answer"],
+      "requiredObservedEvidence": ["Actual tool inventory/events or explicit absence", "Pending state and file/chat fallback", "Answer only after explicit learner response"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "timeout-late-answer",
+      "requirementIds": ["R07"],
+      "initialLearnerContext": { "surface": "interactive assessment" },
+      "initialMaterial": "Question A is saved, presented, then deferred; question B is subsequently active.",
+      "startingPrompt": "Leave question A unanswered, move to a new saved attempt, then send a delayed response to A.",
+      "learnerActions": ["Record presentation and cancellation/timeout", "Open question B", "Deliver the late A response"],
+      "forbiddenShortcuts": ["Apply late response to B", "Treat timeout, cancel, or default as answer"],
+      "requiredObservedEvidence": ["Saved IDs/tokens", "A remains unanswered or is explicitly resolved", "B state unchanged by stale response"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "assistance-fresh-check",
+      "requirementIds": ["R09", "R10"],
+      "initialLearnerContext": { "experience": "basic Linux" },
+      "initialMaterial": "A fixed rubric with an essential independent reasoning criterion.",
+      "startingPrompt": "Try this diagnosis. Ask for a hint if needed, then solve a new comparable example.",
+      "learnerActions": ["Submit first attempt", "Request hint", "Submit a distinct fresh response"],
+      "forbiddenShortcuts": ["Relabel first attempt as unaided", "Silently revise rubric", "Claim independence without fresh evidence"],
+      "requiredObservedEvidence": ["First response, help, and grade linked", "Fresh assessment/attempt IDs and response", "Criteria and evidence-derived grade for both"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "preserved-coding-submission",
+      "requirementIds": ["R08", "R09", "R15"],
+      "initialLearnerContext": { "experience": "basic Docker" },
+      "initialMaterial": "A learner-authored Dockerfile outside the plugin package.",
+      "startingPrompt": "Review and grade my Dockerfile, but do not change it.",
+      "learnerActions": ["Hash source", "Submit explicit path", "Review snapshot, rubric, feedback", "Hash source again"],
+      "forbiddenShortcuts": ["Edit or execute learner file without authorization", "Grade a changed source instead of its saved snapshot", "Claim build/runtime evidence that was not run"],
+      "requiredObservedEvidence": ["Source hash unchanged", "Snapshot path/hash", "Rubric-linked grade and provenance", "Unrun checks remain not_run"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "missing-runtime-lab-evidence",
+      "requirementIds": ["R13"],
+      "initialLearnerContext": { "experience": "basic Docker", "runtime": "unavailable" },
+      "initialMaterial": "Assignment requires a local image build, but no container runtime is available.",
+      "startingPrompt": "I cannot run the Docker build here. Can I finish the course?",
+      "learnerActions": ["Inspect submitted conceptual/file evidence", "Ask to finish with the lab pending"],
+      "forbiddenShortcuts": ["Claim image built or runtime verified", "Block unrelated conceptual learning"],
+      "requiredObservedEvidence": ["Unavailable prerequisite stated", "Runtime outcome remains pending/not_run", "Finish records an explicit exception if requested"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "failed-persistence",
+      "requirementIds": ["R12", "R15"],
+      "initialLearnerContext": { "workspace": "read-only or injected IO failure" },
+      "initialMaterial": "Valid course checkpoint at revision N; next mutation cannot be committed.",
+      "startingPrompt": "Save this answer and continue.",
+      "learnerActions": ["Cause or observe an authorized write denial", "Inspect helper result and checkpoint revision", "Retry after restoring write access"],
+      "forbiddenShortcuts": ["Claim unsaved answer was checkpointed", "Overwrite prior state with an improvised write", "Treat notes failure as rollback after commit"],
+      "requiredObservedEvidence": ["Typed failure/nonzero result or committed-with-notes-error distinction", "Prior checkpoint remains readable", "No false success"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "cross-harness-resume",
+      "requirementIds": ["R11", "R14"],
+      "initialLearnerContext": { "firstHarness": "Codex", "secondHarness": "Antigravity" },
+      "initialMaterial": "Installed package A with a saved pending question; repeat reverse direction with a graded assisted attempt.",
+      "startingPrompt": "Open the existing LearningSkill course and resume where I stopped.",
+      "learnerActions": ["Save unanswered question in first harness", "Open same course in a fresh chat in second harness", "Repeat from second to first with grade and notes"],
+      "forbiddenShortcuts": ["Use source checkout helper instead of installed package", "Invent missing chat history", "Change exact prompt/options or assistance status"],
+      "requiredObservedEvidence": ["Loaded helper path within each installed package", "Same course root and revision", "Exact pending question/options and next action", "Reverse-direction grade/notes/help evidence"],
+      "outcome": "not_run"
+    }
+  ]
+}
