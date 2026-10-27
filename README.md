@@ -17,11 +17,11 @@ npm run validate
 agy plugin validate dist/antigravity --strict --json
 ```
 
-The build creates self-contained packages in `dist/codex` and `dist/antigravity`. Local validation checks package structure and contents. AGY strict validation checks its native manifest/package format. None of these checks proves that an installed skill loads or that an interactive assessment widget works.
+The build creates self-contained packages in `dist/codex` and `dist/antigravity`. Local validation checks package structure and contents. AGY strict validation checks its native manifest/package format. Successful installation/listing still does not prove fresh-chat skill loading or interactive assessment behavior.
 
-For Codex, add this repository as a local marketplace with `codex plugin marketplace add .`, then install `learning-skill@learning-skill-local` with `codex plugin add learning-skill@learning-skill-local --json`. For Antigravity, validate and install `dist/antigravity` with `agy plugin validate dist/antigravity --strict --json` and `agy plugin install dist/antigravity`. Follow each host's normal activation/reload interface, then confirm the skill is available in a fresh chat. See [bounded acceptance](docs/acceptance.md) for evidence to capture and limitations.
+Codex local marketplace registration and `learning-skill@learning-skill-local` installation have completed. The plugin is enabled at `C:/Users/athar/.codex/plugins/cache/learning-skill-local/learning-skill/0.1.0`. Antigravity strict validation and installation of `dist/antigravity` have also completed; the CLI reported `[ok] learning-skill`, with one skill enabled. These actions preserved unrelated plugins. The Codex listing emitted a remote catalog network warning, while local install state remained visible. Fresh-chat loading, helper resolution, interactive widgets, and learner-facing behavior remain unverified. See [bounded acceptance](docs/acceptance.md) for the exact evidence and remaining checks.
 
-Recorded workspace evidence: Node `v26.3.0`; Codex CLI `0.164.0-alpha.11.1`; AGY `1.4.7`; Wave 5 `npm run build` and `npm run validate` passed; AGY strict validation reported exit 0 with no findings. Native plugin installation, loaded skill paths, interactive widgets, and genuine cross-harness resume have not been verified. Minimum Node 22 compatibility remains untested.
+Final verification at HEAD `a645aa2417148eccf71081a0e03aea26895def09` used Node `v26.3.0`, Codex `0.164.0-alpha.11.1`, and AGY `1.4.7`. `npm test -- --test-concurrency=1` passed 52 of 56 tests, with 0 failures and 4 Windows symlink/junction fixture skips; `npm run build`, `npm run validate`, and AGY strict validation passed. Node 22 was unavailable. Fresh interactive sessions, actual teaching quality, live learner-file grading, and bidirectional genuine cross-harness resume remain untested. See [bounded acceptance](docs/acceptance.md) for exact results and source asset hashes.
 
 ## Use in conversation
 
