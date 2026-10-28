@@ -50,13 +50,37 @@ test('initialization, validated publication, Q&A, reading progress and resume re
   assert.equal((await resumeCourse(root)).state.revision, 5);
 });
 
+test('initialization and fresh-process resume preserve optional questionnaire snapshots and legacy context', async (t) => {
+  const question = { questionId: 'q-prereq', purpose: 'prerequisite', concept: 'containers', type: 'choice', prompt: 'How familiar are you with containers?', options: [{ optionId: 'new', text: 'New' }, { optionId: 'some', text: 'Some experience' }], selectedOptionId: 'some', response: 'I have used Docker once.', responseKind: 'explanation' };
+  const partial = { status: 'partial', reason: 'Learner asked to proceed', questions: [{ questionId: 'q-open', purpose: 'prerequisite', concept: 'images', type: 'free_text', prompt: 'What do you know about images?', response: null, responseKind: 'unknown' }], interpretation: { strengths: [], possibleGaps: [], uncertainties: [], courseAdjustments: [] }, lesson0: { decision: 'not_needed', topics: [], reason: 'No foundation lesson selected from available evidence.' } };
+  const snapshots = [
+    { status: 'completed', reason: 'Answered', questions: [question], interpretation: { strengths: [{ summary: 'Has used Docker', questionIds: ['q-prereq'], learnerStatements: ['I have used Docker once.'] }], possibleGaps: [], uncertainties: [], courseAdjustments: [] }, lesson0: { decision: 'declined', topics: [], reason: 'Learner declined.' } },
+    partial,
+    ...['skipped', 'not_needed'].map(status => ({ status, reason: 'No diagnostic needed', questions: [], interpretation: { strengths: [], possibleGaps: [], uncertainties: [], courseAdjustments: [] }, lesson0: { decision: 'not_needed', topics: [], reason: 'No foundation lesson selected.' } })),
+  ];
+  for (const [index, snapshot] of snapshots.entries()) {
+    const context = { level: 'beginner', preference: 'examples first', preCourseAssessment: snapshot };
+    const root = await temp(t);
+    await initializeCourse(root, { operationId: `questionnaire-${index}`, expectedRevision: 0, courseId: `course-${index}`, learnerContext: context, goal: 'Learn', prerequisites: [], readingRateWpm: 238, lessons: [], assessments: {}, assignments: {} });
+    const entry = new URL('../src/course.mjs', import.meta.url).href;
+    const child = spawnSync(process.execPath, ['--input-type=module', '-e', `const { resumeCourse } = await import(${JSON.stringify(entry)}); const r = await resumeCourse(process.argv[1]); console.log(JSON.stringify({ schemaVersion: r.state.schemaVersion, learnerContext: r.state.learnerContext }));`, root], { cwd: process.cwd(), encoding: 'utf8' });
+    assert.equal(child.status, 0, child.stderr);
+    assert.deepEqual(JSON.parse(child.stdout), { schemaVersion: 1, learnerContext: context });
+  }
+  const root = await temp(t);
+  await initializeCourse(root, { operationId: 'legacy-context', expectedRevision: 0, courseId: 'legacy', learnerContext: { level: 'beginner' }, goal: 'Learn', prerequisites: [], readingRateWpm: 238, lessons: [], assessments: {}, assignments: {} });
+  assert.equal(Object.hasOwn((await resumeCourse(root)).state.learnerContext, 'preCourseAssessment'), false);
+});
+
 test('completion projection keeps a placeholder required assessment pending', async (t) => {
-  const root = await setup(t);
+  const confidentSnapshot = { status: 'completed', reason: 'Learner reported confidence', questions: [{ questionId: 'q', purpose: 'prerequisite', concept: 'layers', type: 'free_text', prompt: 'Explain a layer.', response: 'I know this well.', responseKind: 'self_report' }], interpretation: { strengths: [{ summary: 'Reports confidence', questionIds: ['q'], learnerStatements: ['I know this well.'] }], possibleGaps: [], uncertainties: [], courseAdjustments: [] }, lesson0: { decision: 'not_needed', topics: [], reason: 'No foundation lesson selected.' } };
+  const root = await setup(t, { ...initRequest, learnerContext: { level: 'beginner', preCourseAssessment: confidentSnapshot } });
   await publishCourse(root, { operationId: 'pub', expectedRevision: 1, manifest });
   const closed = await recordProgress(root, { operationId: 'finish-pending', expectedRevision: 2, action: 'finish' });
   assert.equal(closed.state.phase, 'closed_with_exceptions');
   assert.ok(closed.state.unresolvedTopics.some((item) => item.includes('outcome-1')));
   assert.equal(closed.state.assessments['quiz-1'].state, 'pending');
+  assert.deepEqual(closed.state.attempts, {});
 });
 
 test('a published lesson outcome without an assessment cannot complete the course', async (t) => {

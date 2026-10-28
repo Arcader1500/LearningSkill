@@ -39,13 +39,21 @@ The agent chooses each action from your message and saved state. This is an inst
 
 | Stage | Agent action | Saved result |
 | --- | --- | --- |
-| Create | Interpret topic, experience, goal, and constraints; research and author core reading; initialize and publish the course. | Overview, lesson files, source/version assumptions, material hashes, initial next action. |
+| Create | Interpret topic, experience, goal, and constraints; ask optional, ungraded intake questions when prerequisite uncertainty could affect the course; resolve any Lesson 0 choice; then research and author the course. | Overview, lesson files, source/version assumptions, material hashes, initial next action, and a concise saved learning-context summary. |
 | Teach / discuss | Direct you to a section, answer a real question, and record a useful explanation summary. | Q&A records and classnotes. |
 | Reading complete | Record your report and move toward the lesson's quiz. | Reading progress; no automatic assessment pass. |
 | Quiz | Save prompts/options, key, and rubric; save the pending question before displaying it; await an explicit response. | Fixed assessment, question/attempt identifiers, presentation token, then answer evidence. |
 | Assignment | Give a brief/starter; you author and submit the answer. | A hashed snapshot of submitted bytes, separate from your working files. |
 | Grade / continue | Compare the saved response with its rubric; propose criterion scores and feedback; record help and the next action. | Validated scores, evidence references, attempt history, updated notes/progress. |
 | Resume | Discover/select the course, read committed history and relevant material, and follow its saved next action. | An unanswered question stays pending; ungraded work resumes grading. |
+
+## New-course intake
+
+Before authoring a new course, the tutor may ask a small number of relevant questions about prerequisites and topic familiarity. It can use a mix of open responses and neutral choices, with focused follow-ups for unclear answers. Familiarity with the target topic is not proof of prerequisite skill: for example, not knowing Python's `async def` alone does not justify a prerequisite lesson, and a request to learn async from the basics remains part of the course.
+
+Intake is ungraded and separate from diagnostic or graded quizzes after lessons. A response cannot pass or exempt an outcome. When actual prerequisite gaps support it, the tutor offers a focused Lesson 0 and waits for an explicit choice. Acceptance adds a real first lesson with linked reading and ordinary evidence requirements; declining adds no phantom lesson. A broad foundation need may warrant a separate course. The learner may explicitly skip the questionnaire or continue before answering; assumptions and unanswered responses remain visible as such.
+
+The intake snapshot is stored in `learnerContext` during the existing course initialization/bootstrap, and `course.md` carries a concise summary. There is no durable pre-initialization questionnaire session: a lost chat cannot be resumed as though its unanswered intake were saved. A failed initialization/bootstrap does not save the questionnaire. Once a course exists, resume uses committed `state.json` through the existing file tools to read the context; legacy courses without a snapshot remain valid. See the [protocol convention](protocol.md#pre-course-questionnaire-context).
 
 ## What the helper actually does
 

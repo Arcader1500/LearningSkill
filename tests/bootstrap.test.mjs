@@ -41,6 +41,41 @@ test('bootstrap commits init, publication and progress in one consecutive histor
   assert.equal((await readCourse(root)).records.length, 3);
 });
 
+test('bootstrap publishes an accepted Lesson 0 and saves intake without graded-work side effects', async (t) => {
+  const root = await rootFor(t);
+  await writeFile(path.join(root, 'course.md'), '# Layers\n\n[Foundations](lesson-0.md) [Main lesson](lesson.md)');
+  await writeFile(path.join(root, 'lesson-0.md'), '# Foundations\n\nExplain the prerequisite concept.');
+  const snapshot = { status: 'completed', reason: 'Answered prerequisite questions', questions: [{ questionId: 'q1', purpose: 'prerequisite', concept: 'layers', type: 'free_text', prompt: 'What is a layer?', response: 'A saved set of changes.', responseKind: 'explanation' }], interpretation: { strengths: [], possibleGaps: [{ summary: 'Needs a foundation', questionIds: ['q1'], learnerStatements: ['A saved set of changes.'] }], uncertainties: [], courseAdjustments: [] }, lesson0: { decision: 'accepted', topics: ['layer fundamentals'], reason: 'Learner accepted the focused lesson.' } };
+  const authored = structuredClone(init);
+  authored.learnerContext = { level: 'beginner', preference: 'examples', preCourseAssessment: snapshot };
+  authored.lessons = [{ lessonId: 'lesson-0', outcomeIds: ['foundation'] }, ...authored.lessons];
+  const authoredManifest = { ...manifest, lessons: [{ lessonId: 'lesson-0', outcomeIds: ['foundation'] }, ...manifest.lessons], materials: [...manifest.materials, { path: 'lesson-0.md', role: 'reading' }] };
+  const request = { operationId: 'intake-bootstrap', expectedRevision: 0, init: authored, assessments: [], publish: { manifest: authoredManifest } };
+  const first = await bootstrapCourse(root, request);
+  assert.deepEqual(first.records.map(r => r.kind), ['course_initialized', 'course_published']);
+  assert.deepEqual(first.state.lessons.map(x => x.lessonId), ['lesson-0', 'lesson-1']);
+  assert.deepEqual(first.state.reading, { 'lesson-0': 'not_started', 'lesson-1': 'not_started' });
+  assert.deepEqual(first.state.learnerContext, authored.learnerContext);
+  assert.deepEqual(first.state.attempts, {});
+  assert.equal(first.state.pendingQuestion, null);
+  const replay = await bootstrapCourse(root, request);
+  assert.equal(replay.idempotent, true);
+  assert.deepEqual(replay.state.learnerContext, authored.learnerContext);
+  assert.equal(replay.revision, first.revision);
+  assert.equal((await readCourse(root)).records.length, 2);
+  await assert.rejects(bootstrapCourse(root, { ...request, init: { ...authored, learnerContext: { ...authored.learnerContext, preCourseAssessment: { ...snapshot, reason: 'Changed' } } } }), { code: 'CONFLICT' });
+  const afterConflict = await readCourse(root);
+  assert.deepEqual(afterConflict.state.learnerContext, authored.learnerContext);
+  assert.equal(afterConflict.records.length, 2);
+
+  const declinedRoot = await rootFor(t);
+  const declined = structuredClone(init);
+  declined.learnerContext.preCourseAssessment = { ...snapshot, lesson0: { decision: 'declined', topics: [], reason: 'Learner declined.' } };
+  const declinedResult = await bootstrapCourse(declinedRoot, { operationId: 'declined-bootstrap', expectedRevision: 0, init: declined, assessments: [], publish: { manifest } });
+  assert.deepEqual(declinedResult.state.lessons.map(x => x.lessonId), ['lesson-1']);
+  assert.deepEqual(declinedResult.records.map(r => r.kind), ['course_initialized', 'course_published']);
+});
+
 test('invalid publication leaves no authoritative checkpoint', async (t) => {
   const root = await rootFor(t);
   const request = { operationId: 'bad-bootstrap', expectedRevision: 0, init, assessments: [], publish: { manifest: { ...manifest, materials: [] } } };
