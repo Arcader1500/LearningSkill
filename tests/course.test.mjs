@@ -188,3 +188,37 @@ test('a fresh process resumes pending, submitted, graded and skipped work from c
     }
   }
 });
+
+
+
+test('revision can insert lessons while preserving existing progress and attempts', async (t) => {
+  const root = await setup(t);
+  await publishCourse(root, { operationId: 'pub', expectedRevision: 1, manifest });
+  await recordProgress(root, { operationId: 'read', expectedRevision: 2, lessonId: 'lesson-1', reading: 'in_progress' });
+  const before = await resumeCourse(root);
+  const revisedManifest = { ...manifest, lessons: [{ lessonId: 'lesson-0', title: 'Fundamentals', outcomeIds: ['outcome-0'] }, ...manifest.lessons], materials: [...manifest.materials, { path: 'lessons/lesson-0.md', role: 'reading' }] };
+  await writeFile(path.join(root, 'lessons', 'lesson-0.md'), '# Linux fundamentals\n');
+  const result = await publishCourse(root, { operationId: 'revise', expectedRevision: 3, manifest: revisedManifest });
+  assert.deepEqual(result.state.lessons.map(x => x.lessonId), ['lesson-0', 'lesson-1']);
+  assert.equal(result.state.reading['lesson-0'], 'not_started');
+  assert.equal(result.state.reading['lesson-1'], 'in_progress');
+  assert.deepEqual(result.state.attempts, before.state.attempts);
+  assert.equal(result.state.contentRevision, 2);
+});
+
+test('revision rejects removed, duplicate, and outcome-changed lessons', async (t) => {
+  const root = await setup(t); await publishCourse(root, { operationId: 'pub', expectedRevision: 1, manifest });
+  for (const lessons of [[], [...manifest.lessons, ...manifest.lessons], [{ lessonId: 'lesson-1', outcomeIds: ['changed'] }]]) {
+    await assert.rejects(publishCourse(root, { operationId: `bad-${JSON.stringify(lessons)}`, expectedRevision: 2, manifest: { ...manifest, lessons } }));
+  }
+  assert.equal((await resumeCourse(root)).state.revision, 2);
+});
+
+test('publication allows technical template prose and Docker expressions but rejects unresolved authoring markers', async (t) => {
+  const root = await setup(t);
+  await writeFile(path.join(root, 'lessons', 'lesson-1.md'), 'The template explains Docker. Use `docker inspect --format \'{{.State.Pid}}\' image`.');
+  await publishCourse(root, { operationId: 'technical', expectedRevision: 1, manifest });
+  const rejected = await setup(t);
+  await writeFile(path.join(rejected, 'lessons', 'lesson-1.md'), '# Lesson\n\nTODO: write later');
+  await assert.rejects(publishCourse(rejected, { operationId: 'todo', expectedRevision: 1, manifest }));
+});

@@ -1,6 +1,6 @@
 # {{Lesson title}}
 
-Course template: [course structure](course.md) · Lesson ID: `{{lesson_id}}` · Content revision: `{{revision}}`
+Course structure: [course structure](../course.md) · Lesson ID: `{{lesson_id}}` · Content revision: `{{revision}}`
 
 ## Outcome
 After this lesson, the learner can {{observable explanation/application outcome}}.
@@ -31,3 +31,4 @@ After this lesson, the learner can {{observable explanation/application outcome}
 
 ## Next action
 {{Guided discussion, diagnostic, or assessment ID; do not mark passed from reading completion}}
+

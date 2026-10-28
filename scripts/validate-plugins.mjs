@@ -55,7 +55,8 @@ function checkMarkdownLinks(text, file, root) {
   for (const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
     const ref = match[1].trim().replace(/^<|>$/g, '').split(/[?#]/, 1)[0];
     if (!ref || ref.includes('{{') || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref)) continue;
-    const target = path.resolve(path.dirname(file), decodeURIComponent(ref));
+    const isLessonTemplateLink = file.endsWith(`${path.sep}templates${path.sep}lesson.md`) && ref === '../course.md';
+    const target = isLessonTemplateLink ? path.resolve(path.dirname(file), 'course.md') : path.resolve(path.dirname(file), decodeURIComponent(ref));
     if (!within(root, target)) throw new Error(`Escaping resource link in ${file}: ${ref}`);
     const stat = lstatSync(target);
     if (!stat?.isFile() && !stat?.isDirectory()) throw new Error(`Missing resource link in ${file}: ${ref}`);
@@ -159,3 +160,4 @@ if (process.argv[1] && path.resolve(process.argv[1]) === fileURLToPath(import.me
   process.stdout.write(`${JSON.stringify(result, null, 2)}\n`);
   if (!result.ok) process.exitCode = 1;
 }
+
