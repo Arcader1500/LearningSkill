@@ -74,12 +74,17 @@ async function prepareManifest(root, manifest, state) {
   if (!isPlain(manifest) || typeof manifest.goal !== 'string' || !manifest.goal.trim() || !Array.isArray(manifest.prerequisites) || !isPlain(manifest.scope) || !Array.isArray(manifest.scope.included) || !Array.isArray(manifest.scope.excluded) || !Array.isArray(manifest.lessons) || !Array.isArray(manifest.sources) || !isPlain(manifest.estimates) || !Array.isArray(manifest.materials) || manifest.materials.length === 0) fail('INVALID_INPUT', 'Publication requires goal, scope, lessons, sources, estimates, and materials');
   manifest = structuredClone(manifest);
   const lessons = new Map(state.lessons.map((lesson) => [lesson.lessonId, lesson]));
+  const publishedIds = new Set();
   for (let index = 0; index < manifest.lessons.length; index++) {
     const lesson = manifest.lessons[index];
-    if (!isPlain(lesson) || !isId(lesson.lessonId) || !Array.isArray(lesson.outcomeIds) || !lessons.has(lesson.lessonId) || JSON.stringify(lesson.outcomeIds) !== JSON.stringify(lessons.get(lesson.lessonId).outcomeIds)) fail('INVALID_INPUT', 'Published lessons must match initialized lesson outcomes');
-    manifest.lessons[index] = { ...structuredClone(lessons.get(lesson.lessonId)), ...lesson };
+    if (!isPlain(lesson) || !isId(lesson.lessonId) || publishedIds.has(lesson.lessonId) || !Array.isArray(lesson.outcomeIds)) fail('INVALID_INPUT', 'Published lessons must have unique IDs and outcomes');
+    publishedIds.add(lesson.lessonId);
+    const existing = lessons.get(lesson.lessonId);
+    if (!existing && state.phase !== 'active') fail('INVALID_INPUT', 'Initial publication lessons must match initialized lessons');
+    if (existing && JSON.stringify(lesson.outcomeIds) !== JSON.stringify(existing.outcomeIds)) fail('INVALID_INPUT', 'Existing lesson outcomes cannot change during publication');
+    manifest.lessons[index] = { ...(existing ? structuredClone(existing) : {}), ...lesson };
   }
-  if (manifest.lessons.length !== state.lessons.length) fail('INVALID_INPUT', 'Published manifest must include every initialized lesson');
+  if ([...lessons.keys()].some((lessonId) => !publishedIds.has(lessonId))) fail('INVALID_INPUT', 'Publication cannot remove existing lessons');
   const materials = [];
   for (const material of manifest.materials) {
     if (!isPlain(material) || typeof material.path !== 'string' || !['course', 'reading', 'assignment', 'key'].includes(material.role)) fail('INVALID_INPUT', 'Each material needs a relative path and supported role');
@@ -90,13 +95,20 @@ async function prepareManifest(root, manifest, state) {
     if (!stat.isFile()) fail('NOT_READY', `Material is not a regular file: ${material.path}`);
     const bytes = await readFile(file);
     const content = bytes.toString('utf8');
-    if (!content.trim() || /\{\{[^}]+\}\}|\bTODO\b|\bTEMPLATE\b|\[\s*(?:write|add|insert)\b/i.test(content)) fail('NOT_READY', `Material is blank or still a template: ${material.path}`);
+    if (!content.trim() || hasAuthoringMarkers(content)) fail('NOT_READY', `Material is blank or still a template: ${material.path}`);
     if (material.role === 'course' || material.role === 'reading') await checkLinks(root, material.path, content);
     materials.push({ path: material.path.replaceAll('\\', '/'), role: material.role, sha256: hash(bytes) });
   }
   if (!materials.some((material) => material.path === 'course.md' && material.role === 'course')) fail('NOT_READY', 'Publication requires course.md as a course material');
   if (materials.filter((material) => material.role === 'reading').length < state.lessons.length) fail('NOT_READY', 'Publication is missing required lesson reading material');
   return { ...structuredClone(manifest), materials };
+}
+
+function hasAuthoringMarkers(content) {
+  const prose = content.replace(/```[\s\S]*?```|~~~[\s\S]*?~~~/g, '').replace(/`[^`]*`/g, '');
+  return /\{\{[^}]+\}\}/.test(prose)
+    || /^\s*(?:[-*+]\s+|\d+[.)]\s+)?TODO(?:\s*[:—-]|\s*$)/im.test(prose)
+    || /^\s*\[\s*(?:write|add|insert)\b[^\]]*\]\s*$/im.test(prose);
 }
 
 async function checkLinks(root, sourcePath, content) {
@@ -226,4 +238,5 @@ function learnerQuestion(pending, state, records) {
   const question = state.assessments[assessmentId]?.questions?.find((item) => item.questionId === questionId);
   return { assessmentId, questionId, attemptId, presentationToken, prompt, ...(options ?? question?.options ? { options: options ?? question.options } : {}) };
 }
+
 

@@ -317,12 +317,13 @@ export function reduceState(prior, records) {
           break;
         case 'assessment_prepared':
           const placeholder = state.assessments[p.assessmentId];
-          if (placeholder && (typeof placeholder !== 'object' || placeholder.state !== 'pending' || placeholder.criteria || placeholder.questions || placeholder.activeAttemptId)) invalid('Assessment rubric and questions are already fixed', 'CONFLICT');
+          if (placeholder !== undefined && placeholder !== 'pending' && (typeof placeholder !== 'object' || placeholder.state !== 'pending' || placeholder.criteria || placeholder.questions || placeholder.activeAttemptId)) invalid('Assessment rubric and questions are already fixed', 'CONFLICT');
           if (!p.outcomeIds.every((outcomeId) => state.lessons.some((lesson) => lesson.outcomeIds.includes(outcomeId)))) invalid('Assessment references an undeclared lesson outcome', 'CORRUPT_STATE');
           if (p.assignmentId !== undefined && !Object.hasOwn(state.assignments, p.assignmentId)) invalid('Assessment references an undeclared assignment', 'CORRUPT_STATE');
-          if (placeholder && (JSON.stringify(placeholder.outcomeIds) !== JSON.stringify(p.outcomeIds) || (placeholder.assignmentId !== undefined && p.assignmentId !== placeholder.assignmentId))) invalid('Prepared assessment differs from its declared placeholder links', 'CONFLICT');
+          if (placeholder && typeof placeholder === 'object' && (JSON.stringify(placeholder.outcomeIds) !== JSON.stringify(p.outcomeIds) || (placeholder.assignmentId !== undefined && p.assignmentId !== placeholder.assignmentId))) invalid('Prepared assessment differs from its declared placeholder links', 'CONFLICT');
           validateCriteria(p.criteria);
-          state.assessments[p.assessmentId] = { ...(placeholder ?? {}), state: 'pending', assessmentId: p.assessmentId, outcomeIds: p.outcomeIds, ...((p.assignmentId ?? placeholder?.assignmentId) === undefined ? {} : { assignmentId: p.assignmentId ?? placeholder.assignmentId }), rubricRevision: p.rubricRevision, contentRevision: record.contentRevision, objective: p.objective, questions: p.questions, keyPath: p.keyPath, criteria: p.criteria };
+          const objectPlaceholder = placeholder && typeof placeholder === 'object' ? placeholder : {};
+          state.assessments[p.assessmentId] = { ...objectPlaceholder, state: 'pending', assessmentId: p.assessmentId, outcomeIds: p.outcomeIds, ...((p.assignmentId ?? objectPlaceholder.assignmentId) === undefined ? {} : { assignmentId: p.assignmentId ?? objectPlaceholder.assignmentId }), rubricRevision: p.rubricRevision, contentRevision: record.contentRevision, objective: p.objective, questions: p.questions, keyPath: p.keyPath, criteria: p.criteria };
           break;
         case 'question_presented':
           const savedAssessment = state.assessments[p.assessmentId];
@@ -417,3 +418,4 @@ export function deriveProgress(state, records = []) {
   validateState(state);
   return { phase: state.phase, revision: state.revision, contentRevision: state.contentRevision, reading: { ...state.reading }, assessments: structuredClone(state.assessments), assignments: structuredClone(state.assignments), unresolvedTopics: [...state.unresolvedTopics], completion: completionProjection(state), nextAction: state.nextAction, recordCount: records.length || state.recordRefs.length };
 }
+
