@@ -1,4 +1,4 @@
-import { fail } from './errors.mjs';
+import { fail, LearningError } from './errors.mjs';
 
 const ID = /^[A-Za-z0-9_-]{1,128}$/;
 const PHASES = new Set(['draft', 'active', 'completed', 'closed_with_exceptions']);
@@ -283,11 +283,12 @@ function completionProjection(state) {
   return { complete: ['active','completed'].includes(state.phase) && uniqueUnresolved.length === 0, ready: uniqueUnresolved.length === 0, outcomes, requiredAssignmentIds: [...requiredAssignments], unresolved: uniqueUnresolved };
 }
 
-export function reduceState(prior, records) {
+export function reduceState(prior, records, { historyReplay = false } = {}) {
   assert(Array.isArray(records) && records.length > 0, 'Reducer requires records');
   let state = prior === null ? null : structuredClone(validateState(prior));
   const seen = new Set(state?.recordRefs.map((r) => r.recordId) ?? []);
   for (const record of records) {
+    try {
     validateRecord(record);
     if (seen.has(record.recordId)) invalid('Duplicate record reference', 'CORRUPT_STATE');
     seen.add(record.recordId);
@@ -410,6 +411,19 @@ export function reduceState(prior, records) {
     state.courseId = record.courseId;
     state.contentRevision = Math.max(state.contentRevision, record.contentRevision);
     state.operationFingerprints[record.operationId] = record.fingerprint;
+    } catch (error) {
+      if (!historyReplay) throw error;
+      const safeCodes = new Set(['INVALID_INPUT', 'UNSUPPORTED_SCHEMA', 'CONFLICT', 'CORRUPT_STATE', 'PATH_ESCAPE', 'IO_ERROR', 'STALE_QUESTION', 'INVALID_GRADE', 'NOT_READY']);
+      const causeCode = safeCodes.has(error?.code) ? error.code : 'CORRUPT_STATE';
+      const details = {
+        stage: 'history_replay',
+        ...(safeId(record?.recordId) ? { recordId: record.recordId } : {}),
+        ...(KINDS.has(record?.kind) ? { kind: record.kind } : {}),
+        ...(Number.isSafeInteger(record?.revision) && record.revision > 0 ? { revision: record.revision } : {}),
+        causeCode,
+      };
+      throw new LearningError(error?.code ?? 'CORRUPT_STATE', error?.message ?? 'History replay failed', details);
+    }
   }
   return validateState(state);
 }
