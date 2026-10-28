@@ -1,3 +1,4 @@
+import { bootstrapCourse } from './bootstrap.mjs';
 import { resolveCourseRoot } from './paths.mjs';
 import { fail } from './errors.mjs';
 import { discoverCourses, initializeCourse, publishCourse, recordQA, recordProgress, resumeCourse } from './course.mjs';
@@ -5,7 +6,7 @@ import { prepareAssessment, presentQuestion, acceptAnswer, recordAssistance, sub
 import { renderClassnotes } from './notes.mjs';
 import { recoverLock } from './store.mjs';
 
-const OPERATIONS = new Set(['course.discover', 'course.init', 'course.publish', 'course.resume', 'qa.record', 'progress.record', 'assessment.prepare', 'question.present', 'answer.record', 'assistance.record', 'submission.record', 'attempt.grade', 'notes.render', 'lock.recover']);
+const OPERATIONS = new Set(['course.discover', 'course.init', 'course.bootstrap', 'course.publish', 'course.resume', 'qa.record', 'progress.record', 'assessment.prepare', 'question.present', 'answer.record', 'assistance.record', 'submission.record', 'attempt.grade', 'notes.render', 'lock.recover']);
 const pick = (value, keys) => value && typeof value === 'object'
   ? Object.fromEntries(keys.filter((key) => value[key] !== undefined).map((key) => [key, value[key]]))
   : {};
@@ -121,6 +122,33 @@ function learnerView(result) {
   return view;
 }
 
+const RECORD_META_KEYS = ['recordId', 'kind', 'timestamp', 'courseId', 'revision', 'contentRevision'];
+function compactView(result) {
+  // Project through learnerView first so compact responses inherit its redaction rules.
+  const full = learnerView(result);
+  const view = pick(full, ['ok', 'committed', 'revision', 'idempotent', 'recovered', 'nextAction', 'notesStatus']);
+  const state = full.state;
+  if (state?.contentRevision !== undefined) view.contentRevision = state.contentRevision;
+  if (state?.nextAction !== undefined) view.nextAction = state.nextAction;
+  const metadata = (full.records ?? []).map((record) => pick(record, RECORD_META_KEYS));
+  if (metadata.length) {
+    view.records = metadata;
+    view.latestRecord = metadata.at(-1);
+  }
+  view.question = full.question ?? null;
+  const pending = result?.pendingQuestion;
+  const rawPending = result?.state?.pendingQuestion;
+  view.pendingQuestion = pending
+    ? { ...pick(pending, ['assessmentId', 'questionId', 'attemptId', 'presentationToken', 'prompt']), ...(rawPending?.routingId === undefined ? {} : { routingId: rawPending.routingId }), ...(Array.isArray(pending.options) ? { options: pending.options.map(publicOption) } : {}) }
+    : state?.pendingQuestion ?? null;
+  const attemptId = result?.state?.pendingQuestion?.attemptId ?? result?.question?.attemptId ?? result?.pendingQuestion?.attemptId
+    ?? [...(result?.records ?? [])].reverse().map((record) => record.payload?.attemptId).find(Boolean);
+  const grade = attemptId && (state?.attempts?.[attemptId]?.grade
+    ?? Object.values(result?.state?.assessments ?? {}).find((assessment) => assessment.latestAttemptId === attemptId)?.latestGrade);
+  if (grade) view.grade = publicGrade(grade);
+  return view;
+}
+
 function validateRequest(request) {
   if (!request || typeof request !== 'object' || Array.isArray(request)) fail('INVALID_INPUT', 'Request must be a JSON object');
   if (request.protocolVersion !== 1) fail('UNSUPPORTED_SCHEMA', 'Unsupported request protocol version');
@@ -128,6 +156,7 @@ function validateRequest(request) {
   if (typeof request.workspaceRoot !== 'string' || !request.workspaceRoot.trim()) fail('INVALID_INPUT', 'workspaceRoot is required');
   if (request.courseRoot !== undefined && (typeof request.courseRoot !== 'string' || !request.courseRoot.trim())) fail('INVALID_INPUT', 'courseRoot must be a nonempty path');
   if (request.payload !== undefined && (!request.payload || typeof request.payload !== 'object' || Array.isArray(request.payload))) fail('INVALID_INPUT', 'payload must be a JSON object');
+  if (request.responseMode !== undefined && !['full', 'compact'].includes(request.responseMode)) fail('INVALID_INPUT', 'responseMode must be full or compact');
   const mutation = !['course.discover', 'course.resume', 'notes.render'].includes(request.op);
   if (mutation && (typeof request.operationId !== 'string' || !/^[A-Za-z0-9_-]{1,128}$/.test(request.operationId) || !Number.isSafeInteger(request.expectedRevision) || request.expectedRevision < 0)) fail('INVALID_INPUT', 'Mutation requires a safe operationId and nonnegative expectedRevision');
   return request;
@@ -141,6 +170,7 @@ export async function dispatch(input) {
     const root = await resolveCourseRoot(request);
     let result;
     switch (request.op) {
+      case 'course.bootstrap': result = await bootstrapCourse(root, { ...payload, operationId: request.operationId, expectedRevision: request.expectedRevision }); break;
       case 'course.init': result = await initializeCourse(root, { ...payload, operationId: request.operationId, expectedRevision: request.expectedRevision }); break;
       case 'course.publish': result = await publishCourse(root, { ...payload, operationId: request.operationId, expectedRevision: request.expectedRevision }); break;
       case 'course.resume': result = await resumeCourse(root); break;
@@ -156,7 +186,7 @@ export async function dispatch(input) {
       case 'lock.recover': result = await recoverLock(root, payload); break;
     }
     if (result?.ok === false) return learnerView(result);
-    if (!['course.init', 'course.publish', 'qa.record', 'progress.record', 'notes.render', 'course.resume'].includes(request.op)) {
+    if (!['course.init', 'course.bootstrap', 'course.publish', 'qa.record', 'progress.record', 'notes.render', 'course.resume'].includes(request.op)) {
       try { result.notesStatus = await renderClassnotes(root); }
       catch (error) { result.notesStatus = { ok: false, error: { code: error.code ?? 'IO_ERROR', message: error.message } }; }
     }
@@ -165,9 +195,13 @@ export async function dispatch(input) {
       const saved = result.question ?? result.state.assessments?.[pending.assessmentId]?.questions?.find((question) => question.questionId === pending.questionId);
       result.pendingQuestion = saved ? { assessmentId: pending.assessmentId, questionId: pending.questionId, attemptId: pending.attemptId, presentationToken: pending.presentationToken, prompt: saved.prompt, ...(saved.options ? { options: saved.options } : {}) } : null;
     }
-    return learnerView({ ok: true, ...result });
+    const response = { ok: true, ...result };
+    return request.responseMode === 'compact' && !['course.discover', 'course.resume', 'notes.render'].includes(request.op)
+      ? compactView(response)
+      : learnerView(response);
   } catch (error) {
     const code = ['ENOENT', 'EACCES', 'EPERM', 'EIO'].includes(error.code) ? 'IO_ERROR' : error.code ?? 'IO_ERROR';
     return { ok: false, error: { code, message: error.message } };
   }
 }
+
