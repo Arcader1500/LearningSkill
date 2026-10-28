@@ -6,6 +6,16 @@ Follow the documented allowlisted operations and request envelopes. Reads need n
 
 The course checkpoint and referenced immutable records are authoritative. Unreferenced files are not history. Classnotes are a deterministic projection and cannot award progress. If a mutation commits but notes rendering fails, report the committed revision and notes issue separately. If a write is denied or fails, say which progress was not saved. Do not claim persistence based on a response or chat memory.
 
+## Report what was saved
+
+After a learner progress, answer, submission, or grading mutation, inspect its result before reporting success or advancing. Use returned committed data when sufficient. Compact output may include a grade and next action without reading or assessment status: use `course.resume` to validate and obtain missing state before asserting those details. A retry marked idempotent confirms the original operation at its original revision, not a new update; resume if a current summary is needed. Do not require another state read after unrelated conversation or when the mutation result already supplies the evidence needed.
+
+Keep reading, answer capture, grading, and passing distinct in the learner-facing summary. State the affected lesson/work item, confirmed reading status when relevant, whether an answer was saved or grading is pending, any confirmed score and unmet criteria, and the saved next action. Use the checkpoint's actual assessment state rather than inventing a `partial` state from a fractional score. A saved answer is not a grade, and a score alone is not proof of a pass or lesson completion. Do not imply that discussing or opening the next lesson completed it.
+
+For example, when validated state shows Lesson 00 reading `reported_complete`, its quiz scored 0.5/1 with an unmet essential criterion, and Lesson 2 is still `not_started`, say: “Lesson 00 reading is saved as complete. Its quiz earned 0.5/1 and has not passed; the reasoning criterion remains unmet. Lesson 2 is not recorded as read.” Then report the actual saved next action; do not present another quiz unless the learner's request and saved workflow support it.
+
+On a failed mutation, identify the unsaved change and preserve the prior checkpoint; do not advance as though it succeeded. If the result is ambiguous, validate with resume before claiming success. A separate notes failure after `committed:true` means progress was saved and notes need repair, not that the learner must submit the answer again.
+
 For conflicts, locks, missing/corrupt evidence, unsupported schema, or escaping paths, preserve existing files and follow the protocol's error path. Do not reset or overwrite unknown data. Explicit stale-lock recovery requires confirmation that the recorded owner is inactive and the documented ownership token.
 
 On resume, read the selected course checkpoint and its referenced records, verify the current material/revision, and load only context needed for the next action. Keep the existing pending question, prompt, and option order; reoffer it with a new presentation token. A pending submitted/ungraded attempt resumes grading rather than requesting a new answer. Preserve Q&A summaries, grades, evidence IDs, and help conditions across sessions/harnesses.
