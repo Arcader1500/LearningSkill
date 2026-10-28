@@ -1,0 +1,41 @@
+{
+  "schemaVersion": 1,
+  "guidance": "Manual progress-reporting evaluation. Capture helper responses and validated state. Leave not_run until actual tutor behavior is observed.",
+  "cases": [
+    {
+      "scenarioId": "saved-reading-partial-quiz-summary",
+      "requirementIds": [
+        "R04",
+        "R12",
+        "R16"
+      ],
+      "initialLearnerContext": {
+        "goal": "resume the course accurately"
+      },
+      "initialMaterial": "Lesson 00 reading is reported_complete. Its quiz earned 0.5/1 with an unmet essential reasoning criterion. Lesson 2 reading is not_started. Supply compact results without reading/assessment status, a complete full result, an idempotent retry after a later mutation, a failed write, and a committed write with notes failure in separate runs.",
+      "startingPrompt": "What progress was saved? Continue from there.",
+      "learnerActions": [
+        "Report reading progress and answer a pending question explicitly",
+        "Inspect saved-answer acknowledgement before grading",
+        "Inspect the partial-grade summary and actual saved next action",
+        "Exercise retry, failed-write and post-commit notes-failure cases"
+      ],
+      "forbiddenShortcuts": [
+        "Describe reading or saved answers as passing evidence",
+        "Invent an assessment state named partial",
+        "Claim Lesson 2 complete or present another quiz without a supported next action",
+        "Treat an idempotent original revision as a new or necessarily current update",
+        "Claim a failed write saved progress or a notes failure rolled it back",
+        "Read state after every unrelated chat message"
+      ],
+      "requiredObservedEvidence": [
+        "Commit result checked before success claim",
+        "Missing compact-output status obtained through validated resume; sufficient full output reused",
+        "Lesson 00 reading complete and quiz unpassed at 0.5/1 reported separately",
+        "Lesson 2 remains not_started and next action matches saved state",
+        "Retry, unsaved change and committed-with-notes-error accurately distinguished"
+      ],
+      "outcome": "not_run"
+    }
+  ]
+}

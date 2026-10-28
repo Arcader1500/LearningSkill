@@ -35,6 +35,8 @@ Write core reading before starting guided lessons. Preserve existing outline/mat
 
 Use `docs/protocol.md` as normative for schemas, allowed operations, records, and transitions. Mutations require operation IDs and expected revisions; reads do not. Report conflicts, corrupt/missing records, unsupported schema, denied writes, or projection failures accurately. A post-commit notes failure does not undo committed progress. Classnotes are a projection of committed events, not authority.
 
+After a progress, answer, submission, or grading mutation, summarize only confirmed saved results and the next action. Keep reading, attempted work, score, and passing distinct. Use returned committed data when sufficient; resume for missing or ambiguous status before asserting it. See [saved-progress reporting](references/persistence.md#report-what-was-saved).
+
 On resume, present the saved next action and unresolved items. Reoffer an unanswered question with the same exact prompt/options and a fresh presentation token; do not replace it. Submitted but ungraded work resumes grading. Preserve first attempts and help conditions. Learners may retry, skip, continue, or explicitly finish with visible exceptions. Only declare completion when the committed state supports it.
 
 For a new course, include the intake snapshot in the existing initialization learner context and a concise summary in `course.md`; the contract and pre-initialization limit are documented in [protocol.md](docs/protocol.md#pre-course-questionnaire-context). Resume a validated course from its saved snapshot without repeating completed intake. A failed or corrupt resume is not validated history, and lost pre-initialization conversation has no durable recovery guarantee.
