@@ -1,0 +1,37 @@
+{
+  "schemaVersion": 1,
+  "guidance": "Manual teaching evaluation; fixture tests cannot establish rubric quality. Leave not_run until directly observed.",
+  "cases": [
+    {
+      "scenarioId": "multipart-rubric-partial-credit",
+      "requirementIds": [
+        "R05",
+        "R09"
+      ],
+      "initialLearnerContext": {
+        "experience": "basic container concepts"
+      },
+      "initialMaterial": "Published lesson about layer reuse. Prepare a one-point prediction-and-explanation quiz with two essential independent criteria worth 0.5 each before any answer.",
+      "startingPrompt": "Ask me to predict reuse and explain why, then grade each part.",
+      "learnerActions": [
+        "Inspect the exact saved rubric revision before answering",
+        "Give a correct prediction and incorrect causal explanation without assistance",
+        "Inspect criterion feedback, evidence and derived total",
+        "Request a fresh comparable check"
+      ],
+      "forbiddenShortcuts": [
+        "Use one holistic score for independently observable requirements",
+        "Change criterion weights after seeing the answer",
+        "Call 0.5/1 a pass despite an unmet essential criterion",
+        "Overwrite the first attempt"
+      ],
+      "requiredObservedEvidence": [
+        "Distinct prediction and reasoning criteria fixed before presentation",
+        "Saved learner response and matching criterion evidence refs",
+        "0.5/1 total with prediction met and reasoning unmet",
+        "Assessment remains unpassed; fresh check preserves prior history"
+      ],
+      "outcome": "not_run"
+    }
+  ]
+}
