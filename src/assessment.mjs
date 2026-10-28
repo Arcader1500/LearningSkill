@@ -39,20 +39,28 @@ function attemptFor(state, assessmentId, attemptId) {
 }
 
 export async function prepareAssessment(root, request) {
-  const outcomeIds = request.outcomeIds ?? (request.outcomeId ? [request.outcomeId] : undefined);
-  const { assessmentId, objective, rubricRevision, questions, criteria, keyPath, key } = request;
-  if (!safeId(assessmentId) || typeof objective !== 'string' || !objective.trim() || !Number.isSafeInteger(rubricRevision) || rubricRevision < 1 || !Array.isArray(questions) || !questions.length || !Array.isArray(criteria) || !criteria.length || typeof keyPath !== 'string' || typeof key !== 'string' || !Array.isArray(outcomeIds) || !outcomeIds.length) fail('INVALID_INPUT', 'Assessment requires an ID, objective, rubric, questions, private key, and target outcome IDs');
-  const definition = { assessmentId, ...(request.assignmentId === undefined ? {} : { assignmentId: request.assignmentId }), outcomeIds, objective, rubricRevision, questions, criteria, keyPath };
-  const snapshots = [
-    { path: `assessments/${assessmentId}.json`, bytes: jsonBytes(definition) },
-    { path: keyPath, bytes: Buffer.from(key ?? '', 'utf8') },
-  ];
+  const prepared = prepareAssessmentPayload(request);
+  const { definition, snapshots } = prepared;
+  const { assessmentId } = request;
   const semantic = semanticInput('assessment.prepare', request);
   const prior = await replay(root, request, semantic, snapshots);
   if (prior) return prior;
   const { state } = await current(root);
   if (request.assignmentId !== undefined && (!safeId(request.assignmentId) || !(request.assignmentId in state.assignments))) fail('INVALID_INPUT', 'Assessment assignmentId must reference a declared assignment');
   return append(root, request, 'assessment_prepared', definition, snapshots, semantic);
+}
+
+export function prepareAssessmentPayload(request) {
+  if (!request || typeof request !== 'object' || Array.isArray(request)) fail('INVALID_INPUT', 'Assessment preparation requires an object payload');
+  const outcomeIds = request.outcomeIds ?? (request.outcomeId ? [request.outcomeId] : undefined);
+  const { assessmentId, objective, rubricRevision, questions, criteria, keyPath, key } = request;
+  if (!safeId(assessmentId) || typeof objective !== 'string' || !objective.trim() || !Number.isSafeInteger(rubricRevision) || rubricRevision < 1 || !Array.isArray(questions) || !questions.length || !Array.isArray(criteria) || !criteria.length || typeof keyPath !== 'string' || typeof key !== 'string' || !Array.isArray(outcomeIds) || !outcomeIds.length) fail('INVALID_INPUT', 'Assessment requires an ID, objective, rubric, questions, private key, and target outcome IDs');
+  const definition = { assessmentId, ...(request.assignmentId === undefined ? {} : { assignmentId: request.assignmentId }), outcomeIds, objective, rubricRevision, questions, criteria, keyPath };
+  const snapshots = [
+    { path: `assessments/${assessmentId}.json`, bytes: jsonBytes(definition), isAssessmentDefinition: true },
+    { path: keyPath, bytes: Buffer.from(key ?? '', 'utf8'), isAssessmentKey: true },
+  ];
+  return { definition, snapshots };
 }
 
 export async function presentQuestion(root, request) {
@@ -175,3 +183,4 @@ export async function submitWork(root, request, options = {}) {
     evidenceId, snapshotPath, snapshotSha256: hash(manifestBytes), provenance: request.provenance,
   }, snapshots, semantic);
 }
+

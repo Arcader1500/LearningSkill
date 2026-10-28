@@ -55,8 +55,15 @@ export async function initializeCourse(root, request) {
     try { await readCourse(root); fail('CONFLICT', 'Course is already initialized'); }
     catch (error) { if (error.code === 'CONFLICT') throw error; throw error; }
   }
+  const initialState = prepareCourseInitialization(request);
+  const record = envelope(null, request, 'course_initialized', { initialState, nextAction: initialState.nextAction });
+  const result = await commit(root, { ...request, semanticInput: semantic, records: [record] });
+  return renderAfter(root, result);
+}
+
+export function prepareCourseInitialization(request) {
   if (!isPlain(request) || !isId(request.courseId) || !isPlain(request.learnerContext) || typeof request.goal !== 'string' || !request.goal.trim() || !Array.isArray(request.prerequisites) || !Number.isFinite(request.readingRateWpm) || request.readingRateWpm <= 0 || !Array.isArray(request.lessons) || !isPlain(request.assessments ?? {}) || !isPlain(request.assignments ?? {})) fail('INVALID_INPUT', 'Course initialization requires a valid identity, goal, context, lessons, and work indexes');
-  const initialState = {
+  return {
     schemaVersion: 1, courseId: request.courseId, revision: 0, contentRevision: 1,
     phase: 'draft', learnerContext: request.learnerContext, goal: request.goal.trim(),
     prerequisites: request.prerequisites, readingRateWpm: request.readingRateWpm,
@@ -65,12 +72,9 @@ export async function initializeCourse(root, request) {
     attempts: {}, courseManifest: null, materialRefs: [], artifactRefs: [], recordRefs: [], operationFingerprints: {}, unresolvedTopics: [],
     nextAction: request.nextAction ?? 'Prepare and publish course materials', notesProjection: null,
   };
-  const record = envelope(null, request, 'course_initialized', { initialState, nextAction: initialState.nextAction });
-  const result = await commit(root, { ...request, semanticInput: semantic, records: [record] });
-  return renderAfter(root, result);
 }
 
-async function prepareManifest(root, manifest, state) {
+export async function prepareCourseManifest(root, manifest, state, stagedSnapshots = []) {
   if (!isPlain(manifest) || typeof manifest.goal !== 'string' || !manifest.goal.trim() || !Array.isArray(manifest.prerequisites) || !isPlain(manifest.scope) || !Array.isArray(manifest.scope.included) || !Array.isArray(manifest.scope.excluded) || !Array.isArray(manifest.lessons) || !Array.isArray(manifest.sources) || !isPlain(manifest.estimates) || !Array.isArray(manifest.materials) || manifest.materials.length === 0) fail('INVALID_INPUT', 'Publication requires goal, scope, lessons, sources, estimates, and materials');
   manifest = structuredClone(manifest);
   const lessons = new Map(state.lessons.map((lesson) => [lesson.lessonId, lesson]));
@@ -86,17 +90,30 @@ async function prepareManifest(root, manifest, state) {
   }
   if ([...lessons.keys()].some((lessonId) => !publishedIds.has(lessonId))) fail('INVALID_INPUT', 'Publication cannot remove existing lessons');
   const materials = [];
+  const stagedKeyPaths = new Set(stagedSnapshots.filter((item) => item.isAssessmentKey).map((item) => item.path.replaceAll('\\', '/')));
+  const stagedDefinitionPaths = new Set(stagedSnapshots.filter((item) => item.isAssessmentDefinition).map((item) => item.path.replaceAll('\\', '/')));
   for (const material of manifest.materials) {
     if (!isPlain(material) || typeof material.path !== 'string' || !['course', 'reading', 'assignment', 'key'].includes(material.role)) fail('INVALID_INPUT', 'Each material needs a relative path and supported role');
-    let file;
-    try { file = await resolveContained(root, material.path); }
-    catch (error) { if (error.code === 'INVALID_INPUT') fail('NOT_READY', `Required material is missing: ${material.path}`); throw error; }
-    const stat = await lstat(file);
-    if (!stat.isFile()) fail('NOT_READY', `Material is not a regular file: ${material.path}`);
-    const bytes = await readFile(file);
+    const materialPath = material.path.replaceAll('\\', '/');
+    if (stagedKeyPaths.has(materialPath) && material.role !== 'key') fail('INVALID_INPUT', `Assessment key material must remain private: ${material.path}`);
+    if (stagedDefinitionPaths.has(materialPath) && material.role !== 'key') fail('INVALID_INPUT', `Assessment definition cannot be published as authored material: ${material.path}`);
+    const staged = stagedSnapshots.find((item) => item.path.replaceAll('\\', '/') === material.path.replaceAll('\\', '/'));
+    let bytes;
+    if (staged) {
+      await resolveContained(root, material.path, { allowMissing: true });
+      bytes = Buffer.from(staged.bytes);
+    }
+    else {
+      let file;
+      try { file = await resolveContained(root, material.path); }
+      catch (error) { if (error.code === 'INVALID_INPUT') fail('NOT_READY', `Required material is missing: ${material.path}`); throw error; }
+      const stat = await lstat(file);
+      if (!stat.isFile()) fail('NOT_READY', `Material is not a regular file: ${material.path}`);
+      bytes = await readFile(file);
+    }
     const content = bytes.toString('utf8');
     if (!content.trim() || hasAuthoringMarkers(content)) fail('NOT_READY', `Material is blank or still a template: ${material.path}`);
-    if (material.role === 'course' || material.role === 'reading') await checkLinks(root, material.path, content);
+    if (material.role === 'course' || material.role === 'reading') await checkLinks(root, material.path, content, stagedSnapshots);
     materials.push({ path: material.path.replaceAll('\\', '/'), role: material.role, sha256: hash(bytes) });
   }
   if (!materials.some((material) => material.path === 'course.md' && material.role === 'course')) fail('NOT_READY', 'Publication requires course.md as a course material');
@@ -111,7 +128,7 @@ function hasAuthoringMarkers(content) {
     || /^\s*\[\s*(?:write|add|insert)\b[^\]]*\]\s*$/im.test(prose);
 }
 
-async function checkLinks(root, sourcePath, content) {
+async function checkLinks(root, sourcePath, content, stagedSnapshots = []) {
   const base = path.posix.dirname(sourcePath.replaceAll('\\', '/'));
   const links = [...content.matchAll(/!?\[[^\]]*\]\(([^)\s]+)(?:\s+[^)]*)?\)/g)].map((match) => match[1].replace(/^<|>$/g, ''));
   for (const link of links) {
@@ -121,6 +138,10 @@ async function checkLinks(root, sourcePath, content) {
     try { decoded = decodeURIComponent(link.split('#')[0].split('?')[0]); } catch { fail('INVALID_INPUT', `Invalid local reading link in ${sourcePath}`); }
     if (!decoded) continue;
     const relative = path.posix.normalize(path.posix.join(base, decoded));
+    if (stagedSnapshots.some((item) => item.path.replaceAll('\\', '/') === relative)) {
+      await resolveContained(root, relative, { allowMissing: true });
+      continue;
+    }
     let file;
     try { file = await resolveContained(root, relative); }
     catch (error) { if (error.code === 'INVALID_INPUT') fail('NOT_READY', `Local reading link is missing: ${link}`); throw error; }
@@ -134,7 +155,7 @@ export async function publishCourse(root, request) {
   if (replay) return renderAfter(root, replay);
   const { state } = await readCourse(root);
   if (blocked(state)) fail('CONFLICT', 'A closed course cannot be published or revised');
-  const manifest = await prepareManifest(root, request.manifest, state);
+  const manifest = await prepareCourseManifest(root, request.manifest, state);
   const revising = state.phase === 'active';
   const nextContentRevision = revising ? state.contentRevision + 1 : state.contentRevision;
   const record = envelope(state, request, revising ? 'course_revised' : 'course_published', revising
@@ -238,5 +259,6 @@ function learnerQuestion(pending, state, records) {
   const question = state.assessments[assessmentId]?.questions?.find((item) => item.questionId === questionId);
   return { assessmentId, questionId, attemptId, presentationToken, prompt, ...(options ?? question?.options ? { options: options ?? question.options } : {}) };
 }
+
 
 
