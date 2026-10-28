@@ -1,0 +1,39 @@
+{
+  "schemaVersion": 1,
+  "guidance": "Manual host evaluation. Record actual tool schemas/events and committed state; structural tests do not establish native widget behavior. Leave not_run until observed.",
+  "cases": [
+    {
+      "scenarioId": "codex-quiz-interface-preflight",
+      "requirementIds": [
+        "R06",
+        "R07"
+      ],
+      "initialLearnerContext": {
+        "surface": "Codex",
+        "preference": "native question UI"
+      },
+      "initialMaterial": "A published quiz with saved prompt, rubric and private key. Run separate sessions with (a) a permitted async free-text tool, (b) only a Plan-only tool, (c) an async tool restricted to clarification, and (d) no question tool.",
+      "startingPrompt": "Quiz me using Codex's native question UI.",
+      "learnerActions": [
+        "Inspect the current tool schemas and instructions before the first quiz",
+        "When permitted, answer a free-text-only asynchronous question",
+        "Otherwise observe explanation of the limitation before chat/file presentation",
+        "Exercise delivery without reply and then an explicit correlated reply"
+      ],
+      "forbiddenShortcuts": [
+        "Infer all native tools unavailable from request_user_input restrictions",
+        "Use a clarification-only tool for grading",
+        "Change mode or add a recommended correct option",
+        "Count delivery or default as a learner answer",
+        "Claim this verifies the historical session's tool inventory"
+      ],
+      "requiredObservedEvidence": [
+        "Actual session tool inventory and suitability decision before presentation",
+        "Preference respected when permitted; fallback explained before display otherwise",
+        "Saved pending IDs/token precede delivery",
+        "Only an explicit correlated response creates answer evidence"
+      ],
+      "outcome": "not_run"
+    }
+  ]
+}
