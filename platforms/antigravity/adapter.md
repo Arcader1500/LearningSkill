@@ -1,6 +1,14 @@
 
 ## Antigravity platform bindings
 
+### Pre-course questionnaire (ungraded)
+
+Before authoring a new course, identify the few prerequisites relevant to the learner's goal and requested starting point. Offer a short, skippable conversational intake only when uncertainty could change the course. Ask a small initial batch (ordinarily two to four) using neutral choices and/or open text; accept unknown and partial replies, and ask only useful follow-ups. Keep prerequisite questions distinct from familiarity with concepts the course will teach. Preserve requested basics even when the learner reports familiarity.
+
+Use `ask_question` only if it is exposed in this session and its actual schema supports neutral choices, needed free-text explanation, and explicit learner responses. Otherwise use ordinary chat. Do not change global modes/settings, favor an option, or treat delivery acknowledgement, silence, timeout, cancellation, or a default selection as an answer or skip. Clarify ambiguous or late asynchronous replies. An explicit skip proceeds with stated provisional assumptions.
+
+Interpret only actual answers qualitatively; no grade, score, proficiency rank, or prerequisite verification. Offer a concrete focused Lesson 0 only for response-supported gaps and wait for explicit acceptance, refusal, or direction to proceed. Accepted Lesson 0 goes before the main sequence with normal lesson files and evidence; a refusal creates no phantom lesson. Save intake under `learnerContext.preCourseAssessment` and summarize it in `course.md` according to the [protocol convention](docs/protocol.md#pre-course-questionnaire-context). Never use graded-question operations for intake or claim pre-initialization durability. On a successful resume, read committed `state.json` with existing file tools for learner context because helper output may filter it; failed/corrupt resume context is not validated history.
+
 Use metadata for the currently loaded `learn` skill to resolve its installed directory. Locate `docs/protocol.md` and `scripts/learning-state.mjs` relative to that directory. The installed skill directory is authoritative; never derive these paths from the working directory, source checkout, or an assumed cache. If the skill metadata does not reveal a resolvable directory, ask for the installed path or keep persistence unavailable and continue read-only.
 
 For durable course state, create a UTF-8 JSON request file in a writable workspace location using the internal envelope and allowlisted operations in `docs/protocol.md`. Invoke the bundled Node entrypoint through the shell/runtime capability actually exposed by this Antigravity session, passing the entrypoint and request-file paths as separate arguments when supported. Never inline serialized request JSON in a command, evaluate request content, or present the helper as a learner-facing CLI. Respect existing tool permissions and accurately report denied or failed writes.

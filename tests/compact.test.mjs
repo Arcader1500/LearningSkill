@@ -1,12 +1,11 @@
 import test from 'node:test';
 import assert from 'node:assert/strict';
 import { mkdtemp, mkdir, rm, writeFile } from 'node:fs/promises';
-import os from 'node:os';
 import path from 'node:path';
 import { dispatch } from '../src/dispatch.mjs';
 
 test('compact mutation responses retain learner-safe metadata while omitting state and assessment banks', async (t) => {
-  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'compact-dispatch-'));
+  const workspaceRoot = await mkdtemp(path.join(process.cwd(), '.test-tmp-compact-dispatch-'));
   const courseRoot = path.join(workspaceRoot, 'courses', 'demo');
   await mkdir(courseRoot, { recursive: true });
   t.after(() => rm(workspaceRoot, { recursive: true, force: true }));
@@ -59,7 +58,7 @@ test('compact mutation responses retain learner-safe metadata while omitting sta
 });
 
 test('responseMode defaults to full, rejects unknown values, and never compacts reads', async (t) => {
-  const workspaceRoot = await mkdtemp(path.join(os.tmpdir(), 'compact-read-'));
+  const workspaceRoot = await mkdtemp(path.join(process.cwd(), '.test-tmp-compact-read-'));
   const courseRoot = path.join(workspaceRoot, 'courses', 'demo');
   await mkdir(courseRoot, { recursive: true });
   t.after(() => rm(workspaceRoot, { recursive: true, force: true }));

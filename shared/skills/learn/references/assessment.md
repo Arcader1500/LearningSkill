@@ -1,5 +1,9 @@
 # Assessment quality
 
+## Ungraded pre-course intake
+
+The optional pre-course questionnaire is conversational course-design evidence, not an assessment. Do not call `assessment.prepare`, `question.present`, `answer.record`, or `attempt.grade` for intake. Its questions, actual responses, and qualitative interpretation belong in `learnerContext.preCourseAssessment` as described by the [protocol](../docs/protocol.md#pre-course-questionnaire-context). Intake creates no pending graded question, attempt, score, pass, exemption, or outcome credit. A later Lesson 0 uses the same ordinary evidence requirements as other lessons.
+
 ## Before presentation
 
 Define the objective, exact prompt, question type, stable option IDs/order when relevant, answer key, and criterion rubric before presenting. Give every criterion an ID, positive maximum points, essential flag, and independence requirement. Save the assessment and question instance before displaying it. Keep expected answers and keys in private assessment material; learner-facing question views contain only the prompt and options.

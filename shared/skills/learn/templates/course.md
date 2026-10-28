@@ -10,7 +10,8 @@ By the end, the learner can {{observable outcome}}.
 ## Scope
 - Included: {{focused concepts and tasks}}
 - Excluded/follow-ons: {{boundaries and optional next courses}}
-- Prerequisites: {{verified prerequisites or none}}
+- Prerequisites: {{response-supported prerequisites or provisional assumptions; identify uncertainty}}
+- Pre-course intake: {{concise summary of relevant answers, uncertainties, and course adjustments; or skipped/not needed/not recorded}}
 
 ## Lesson sequence
 1. [{{Lesson title}}](lessons/{{lesson-file}}.md) — {{outcome}}; required evidence: {{evidence}}

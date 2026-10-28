@@ -133,6 +133,72 @@
       "forbiddenShortcuts": ["Use source checkout helper instead of installed package", "Invent missing chat history", "Change exact prompt/options or assistance status"],
       "requiredObservedEvidence": ["Loaded helper path within each installed package", "Same course root and revision", "Exact pending question/options and next action", "Reverse-direction grade/notes/help evidence"],
       "outcome": "not_run"
+    },
+    {
+      "scenarioId": "pcq-async-basics-and-prerequisites",
+      "requirementIds": ["PCQ01"],
+      "initialLearnerContext": { "experience": "intermediate Python", "goal": "learn async programming from the basics" },
+      "initialMaterial": "Run in a fresh interactive session in each supported harness, Codex and Antigravity. No course exists. Learner is unfamiliar with async def but has varying experience with ordinary functions and waiting behavior.",
+      "startingPrompt": "Teach me Python async programming from the basics. I know some Python but do not know async def.",
+      "learnerActions": ["Answer a concise mix of relevant prerequisite open questions and neutral choices", "Explain what async def means to you, if anything", "Accept or decline any suggested Lesson 0 explicitly", "Inspect the saved course summary, lesson files, and state"],
+      "forbiddenShortcuts": ["Treat unfamiliarity with async def alone as a prerequisite gap", "Treat a yes/choice as proof of understanding", "Omit the requested async basics", "Use questionnaire responses as graded evidence"],
+      "requiredObservedEvidence": ["Exact prompts, ordered choices, actual responses, and response kinds", "Saved summary distinguishing prerequisites from topic familiarity", "Requested async basics retained in course", "No assessment credit or attempt created by intake"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "pcq-lesson0-consent-branches",
+      "requirementIds": ["PCQ01"],
+      "initialLearnerContext": { "goal": "learn async Python", "experience": "can use functions but struggles to explain calls and waiting" },
+      "initialMaterial": "Run in a fresh interactive session in each supported harness, Codex and Antigravity. No course exists. Answers support a focused gap in ordinary function calls and waiting behavior.",
+      "startingPrompt": "Create an async Python course that builds on what I know.",
+      "learnerActions": ["Answer the relevant intake questions", "Observe the concrete Lesson 0 offer", "In one fresh run accept; in a separate fresh run decline", "Inspect course lesson order, linked reading, and saved decision"],
+      "forbiddenShortcuts": ["Insert Lesson 0 before consent", "Create a phantom skipped lesson after decline", "Turn a sprawling foundation into an oversized Lesson 0 instead of suggesting a separate course"],
+      "requiredObservedEvidence": ["Question-linked gap interpretation", "Accepted branch has a real first lesson, unique outcomes, linked reading, estimates, and ordinary evidence requirements", "Declined branch has only requested main-course lessons and no skip record for a nonexistent lesson", "Separate-course suggestion if the prerequisite bridge is broad"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "pcq-skip-and-no-prerequisite",
+      "requirementIds": ["PCQ01"],
+      "initialLearnerContext": { "goal": "learn a self-contained introductory topic", "experience": "new" },
+      "initialMaterial": "Run in a fresh interactive session in each supported harness, Codex and Antigravity. No course exists. Compare an explicit questionnaire skip with a topic that has no meaningful prerequisite uncertainty.",
+      "startingPrompt": "Teach me this self-contained topic. I want to skip any intake questions.",
+      "learnerActions": ["Explicitly skip intake in one fresh run", "Request a no-prerequisite topic in another fresh run", "Inspect saved context when a course is created"],
+      "forbiddenShortcuts": ["Treat silence as skipping", "Conflate skipped with not_needed", "Claim prerequisites were verified after skip", "Require an unnecessary questionnaire"],
+      "requiredObservedEvidence": ["Explicit skip records skipped with stated provisional assumptions", "No-prerequisite route does not impose diagnostic questions and records not_needed only when appropriate", "Saved statuses remain distinct and context contains no fabricated answers"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "pcq-uncertain-and-partial-answers",
+      "requirementIds": ["PCQ01"],
+      "initialLearnerContext": { "goal": "learn a technical topic", "experience": "answers are vague or inconsistent" },
+      "initialMaterial": "Run in a fresh interactive session in each supported harness, Codex and Antigravity. No course exists. Learner gives conflicting familiarity claims, leaves one answer unclear, then explicitly asks to proceed before all questions are answered.",
+      "startingPrompt": "Ask only what you need to tailor this course. I am unsure about some answers.",
+      "learnerActions": ["Give vague and conflicting answers", "Leave an item unanswered", "Explicitly direct the tutor to proceed before answering the remaining question"],
+      "forbiddenShortcuts": ["Assign a global proficiency label", "Invent a response or grade", "Resolve conflicting evidence as certain", "Fill unanswered response with an inferred value"],
+      "requiredObservedEvidence": ["Focused follow-up or conservative uncertainty", "Partial status follows explicit proceed direction", "Unanswered response remains null", "Interpretation cites saved question IDs or actual statements and does not claim unsupported mastery"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "pcq-restricted-tools-and-late-replies",
+      "requirementIds": ["PCQ01"],
+      "initialLearnerContext": { "surface": "native question tool unavailable or recommendation-biased; asynchronous delivery possible" },
+      "initialMaterial": "Run in a fresh interactive session in each supported harness, Codex and Antigravity. New-course intake has no durable pending token. Native tool may force a recommendation or provide no free text.",
+      "startingPrompt": "Start a new course and answer its intake through the available interaction surface.",
+      "learnerActions": ["Observe tool inventory and fallback", "Provide an answer only when explicit", "Exercise silence, cancellation, default selection, or an ambiguous delayed reply where supported", "Clarify a delayed reply when its intended question is unclear"],
+      "forbiddenShortcuts": ["Force a recommendation-biased or unsuitable tool", "Count delivery acknowledgement, silence, cancellation, or default as an answer or skip", "Apply an ambiguous late reply without clarification", "Claim a durable pre-initialization token"],
+      "requiredObservedEvidence": ["Actual tool capability/events or explicit absence", "Neutral chat fallback when needed", "Only actual learner replies populate responses", "Ambiguous late reply is clarified and no response/skip is inferred from nonresponse"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "pcq-resume-legacy-and-creation-failure",
+      "requirementIds": ["PCQ01"],
+      "initialLearnerContext": { "courseState": "one new course with saved intake; one legacy course without the property; one lost pre-init chat; one failed bootstrap" },
+      "initialMaterial": "Run in a fresh interactive session in each supported harness, Codex and Antigravity. Inspect validated committed state.json for new and legacy courses. Include a course with an ordinary required quiz.",
+      "startingPrompt": "Resume this course and continue from its saved progress.",
+      "learnerActions": ["Resume the course with completed intake in a fresh session", "Resume a legacy course", "Inspect a course after failed bootstrap", "Compare ordinary assessment state before and after intake"],
+      "forbiddenShortcuts": ["Repeat completed intake", "Infer snapshot absence from filtered helper output", "Treat failed/corrupt resume as validated history", "Claim lost pre-init answers or failed bootstrap intake were saved", "Use intake to pass or exempt a quiz"],
+      "requiredObservedEvidence": ["Validated state.json context read via existing file tools", "Legacy course remains usable without a questionnaire property", "Lost pre-init and failed-bootstrap cases make no durability claim", "Required quiz remains pending until ordinary evidence is supplied", "Retry behavior creates no duplicate snapshot/history"],
+      "outcome": "not_run"
     }
   ]
 }

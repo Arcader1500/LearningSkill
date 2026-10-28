@@ -3,6 +3,7 @@ import assert from 'node:assert/strict';
 import { lstat, mkdtemp, readFile, rm, symlink, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { spawnSync } from 'node:child_process';
+import { pathToFileURL } from 'node:url';
 
 const helper = path.resolve('scripts/learning-state.mjs');
 const request = (workspaceRoot) => ({ protocolVersion: 1, op: 'course.discover', workspaceRoot });
@@ -26,7 +27,7 @@ syncBuiltinESMExports();`);
     courseId: 'cleanup-denial', operationId: 'init', expectedRevision: 0,
     payload: { courseId: 'cleanup-denial', learnerContext: {}, goal: 'Learn', prerequisites: [], readingRateWpm: 238, lessons: [] },
   }));
-  const child = spawnSync(process.execPath, ['--import', preloader, helper, '--cleanup-request', file], { encoding: 'utf8' });
+  const child = spawnSync(process.execPath, ['--import', pathToFileURL(preloader).href, helper, '--cleanup-request', file], { encoding: 'utf8' });
   assert.ifError(child.error);
   assert.equal(child.status, 0, child.stderr);
   const result = JSON.parse(child.stdout);
@@ -88,7 +89,8 @@ test('cleanup retains malformed and unsuccessful requests and refuses symlink in
   const target = path.join(dir, 'target.json');
   await writeFile(target, JSON.stringify(request(dir)));
   await rm(file);
-  await symlink(target, file);
+  try { await symlink(target, file); }
+  catch (error) { if (error.code === 'EPERM' || error.code === 'EACCES') { t.skip('OS does not allow symlink fixture'); return; } throw error; }
   out = run(['--cleanup-request', file]);
   assert.equal(out.status, 1);
   assert.equal(out.result.ok, false);

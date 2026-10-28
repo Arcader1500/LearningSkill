@@ -71,7 +71,11 @@ In either host, send:
 
 > Use LearningSkill to create a concise course on container image layers. I know basic Linux and want to understand layer reuse. Include a diagnostic quiz and a small learner-authored Dockerfile assignment. Save it in this workspace's courses folder.
 
-The tutor uses your experience, goal, and constraints to prepare the reading and course files, then offers the next lesson action. You can choose a different location by including an explicit course-folder path. Both hosts need Node and permission to read/write that folder for durable progress.
+For a new course, the tutor may first ask a few optional, ungraded questions when prerequisite uncertainty could change the lesson sequence. It distinguishes prerequisite knowledge from familiarity with the requested topic and asks before adding a focused foundation lesson (Lesson 0). You can skip intake or decline that lesson. The tutor prepares and saves the course after useful intake is complete; an accepted Lesson 0 is included in the normal lesson sequence and assessment requirements. Intake answers do not count as quiz answers or course credit.
+
+The course saves a concise learning-context summary with its creation data. Intake happens before a course exists, so unfinished answers are held only in the current conversation; they are not recoverable after a lost chat. A failed course creation does not mean the intake was saved. Existing courses resume from their validated saved context and do not repeat completed intake. See [how it works](docs/how-it-works.md#new-course-intake) and the [intake protocol convention](docs/protocol.md#pre-course-questionnaire-context).
+
+After useful intake is complete, the tutor uses your experience, goal, and constraints to prepare the reading and course files, then offers the next lesson action. Post-lesson diagnostic or graded quizzes remain separate from intake. You can choose a different location by including an explicit course-folder path. Both hosts need Node and permission to read/write that folder for durable progress.
 
 To resume in a new chat or the other host, open the same workspace and say:
 
@@ -85,7 +89,7 @@ LearningSkill is conversational: the requests below are examples, not fixed slas
 
 | Action | Example request |
 | --- | --- |
-| Create a course | “Teach me Git branching. I know basic commits and want to resolve merge conflicts.” |
+| Create a course | “Teach me Git branching. I know basic commits and want to resolve merge conflicts.” The tutor may ask optional prerequisite questions before authoring. |
 | Find or resume a course | “Show my saved courses” or “Resume the course in `courses/git-branching`.” |
 | Start or continue | “Start the first lesson” or “Continue with my next action.” |
 | Ask a lesson question | “Why does this example behave that way? Save the explanation in my classnotes.” |
