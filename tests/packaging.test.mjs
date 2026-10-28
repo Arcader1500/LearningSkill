@@ -121,26 +121,28 @@ test('builder confines outputs and refuses to replace unowned package directorie
   assert.equal(await readFile(path.join(outside, 'keep'), 'utf8'), 'safe');
 });
 
-test('isolated generated package helper initializes and resumes without the source checkout', async (t) => {
+test('both isolated generated package helpers prepare, grade and resume legacy string pending without the source checkout', async (t) => {
   const { root, distRoot } = await fixture(t); await buildPlugins({ root, distRoot });
   const isolated = await mkdtemp(path.join(process.cwd(), '.test-tmp-isolated-plugin-'));
   t.after(() => rm(isolated, { recursive: true, force: true }));
-  const installed = path.join(isolated, 'plugin');
-  await cp(path.join(distRoot, 'codex'), installed, { recursive: true });
-  const workspace = path.join(isolated, 'learner-workspace');
-  const courseRoot = path.join(workspace, 'courses', 'fixture-course');
-  await mkdir(workspace, { recursive: true });
-  const helper = path.join(installed, 'skills/learn/scripts/learning-state.mjs');
-  const requestFile = path.join(isolated, 'request.json');
-  const request = { protocolVersion: 1, op: 'course.init', workspaceRoot: workspace, courseRoot, operationId: 'isolated-init', expectedRevision: 0, payload: { courseId: 'fixture-course', learnerContext: {}, goal: 'Learn layers', prerequisites: [], readingRateWpm: 238, lessons: [], assessments: {}, assignments: {} } };
-  await writeFile(requestFile, JSON.stringify(request));
-  let result = spawnSync(process.execPath, [helper, requestFile], { cwd: isolated, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(JSON.parse(result.stdout).committed, true);
-  await writeFile(requestFile, JSON.stringify({ protocolVersion: 1, op: 'course.resume', workspaceRoot: workspace, courseRoot }));
-  result = spawnSync(process.execPath, [helper, requestFile], { cwd: isolated, encoding: 'utf8' });
-  assert.equal(result.status, 0, result.stderr || result.stdout);
-  assert.equal(JSON.parse(result.stdout).state.courseId, 'fixture-course');
+  for (const platform of ['codex', 'antigravity']) {
+    const installed = path.join(isolated, platform);
+    await cp(path.join(distRoot, platform), installed, { recursive: true });
+    const workspace = path.join(isolated, `workspace-${platform}`); const courseRoot = path.join(workspace, 'courses', 'fixture-course');
+    await mkdir(workspace, { recursive: true });
+    const helper = path.join(installed, 'skills/learn/scripts/learning-state.mjs'); const requestFile = path.join(isolated, `request-${platform}.json`);
+    const invoke = (request) => writeFile(requestFile, JSON.stringify({ protocolVersion: 1, workspaceRoot: workspace, courseRoot, ...request }));
+    const call = async (request) => { await invoke(request); const result = spawnSync(process.execPath, [helper, requestFile], { cwd: isolated, encoding: 'utf8' }); assert.equal(result.status, 0, result.stderr || result.stdout); return JSON.parse(result.stdout); };
+    let result = await call({ op: 'course.init', operationId: 'isolated-init', expectedRevision: 0, payload: { courseId: 'fixture-course', learnerContext: {}, goal: 'Learn layers', prerequisites: [], readingRateWpm: 238, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }], assessments: { quiz: 'pending' }, assignments: {} } });
+    assert.equal(result.committed, true);
+    result = await call({ op: 'assessment.prepare', operationId: 'isolated-prepare', expectedRevision: 1, payload: { assessmentId: 'quiz', objective: 'Explain layers', outcomeIds: ['outcome-1'], rubricRevision: 1, questions: [{ questionId: 'q1', prompt: 'Why use layers?', type: 'free_text' }], criteria: [{ criterionId: 'reasoning', maxPoints: 1, essential: true, independenceRequired: true }], keyPath: 'assessments/quiz-key.md', key: 'private' } });
+    result = await call({ op: 'question.present', operationId: 'isolated-present', expectedRevision: 2, payload: { assessmentId: 'quiz', questionId: 'q1', attemptId: 'attempt-1', presentationToken: 'token-1' } });
+    result = await call({ op: 'answer.record', operationId: 'isolated-answer', expectedRevision: 3, payload: { assessmentId: 'quiz', questionId: 'q1', attemptId: 'attempt-1', presentationToken: 'token-1', response: 'Layers store incremental changes.' } });
+    result = await call({ op: 'attempt.grade', operationId: 'isolated-grade', expectedRevision: 4, payload: { assessmentId: 'quiz', attemptId: 'attempt-1', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: 'answer-attempt-1', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 1, feedback: 'Correct.', evidenceRefs: ['answer-attempt-1'], independent: true }], feedback: 'Passed.' } });
+    result = await call({ op: 'course.resume' });
+    assert.equal(result.state.courseId, 'fixture-course'); assert.equal(result.state.assessments.quiz.state, 'passed');
+    assert.equal(result.state.attempts['attempt-1'].response, 'Layers store incremental changes.');
+  }
 });
 
 test('failed replacement and restore preserve the owned backup and report its recovery path', async (t) => {

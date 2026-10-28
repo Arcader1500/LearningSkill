@@ -100,6 +100,47 @@ test('post-commit notes conflict reports committed progress separately', async (
   assert.equal(result.result.notesStatus.error.code, 'CONFLICT');
 });
 
+test('string pending assessment survives helper prepare, present, answer, grade and fresh resume', async (t) => {
+  const { root } = await fixture(t);
+  let r = await call(t, root, 'course.init', { courseId: 'pending-course', learnerContext: {}, goal: 'Understand layers', prerequisites: [], readingRateWpm: 238, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }], assessments: { quiz: 'pending' }, assignments: {} }, { revision: 0 });
+  assert.equal(r.child.status, 0, r.child.stdout);
+  const assessment = { assessmentId: 'quiz', objective: 'Explain layers', outcomeIds: ['outcome-1'], rubricRevision: 1, questions: [{ questionId: 'q1', prompt: 'Why use layers?', type: 'free_text' }], criteria: [{ criterionId: 'reasoning', maxPoints: 2, essential: true, independenceRequired: true }], keyPath: 'assessments/quiz-key.md', key: 'private key' };
+  r = await call(t, root, 'assessment.prepare', assessment, { revision: 1 }); assert.equal(r.child.status, 0, r.child.stdout);
+  const replacement = await call(t, root, 'assessment.prepare', { ...assessment, rubricRevision: 2, criteria: [{ criterionId: 'reasoning', maxPoints: 3, essential: true, independenceRequired: true }] }, { revision: 2 });
+  assert.equal(replacement.child.status, 1); assert.equal(replacement.result.error.code, 'CONFLICT');
+  assert.equal(replacement.result.error.details, undefined);
+  r = await call(t, root, 'question.present', { assessmentId: 'quiz', questionId: 'q1', attemptId: 'attempt-1', presentationToken: 'token-1' }, { revision: 2 }); assert.equal(r.child.status, 0, r.child.stdout);
+  r = await call(t, root, 'answer.record', { assessmentId: 'quiz', questionId: 'q1', attemptId: 'attempt-1', presentationToken: 'token-1', response: 'Layers preserve incremental changes.' }, { revision: 3 }); assert.equal(r.child.status, 0, r.child.stdout);
+  r = await call(t, root, 'attempt.grade', { assessmentId: 'quiz', attemptId: 'attempt-1', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: 'answer-attempt-1', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'reasoning', points: 2, feedback: 'Correct.', evidenceRefs: ['answer-attempt-1'], independent: true }], feedback: 'Passed.' }, { revision: 4 }); assert.equal(r.child.status, 0, r.child.stdout);
+  const before = await readdir(root, { recursive: true });
+  const hashes = new Map();
+  for (const relative of before) { const file = path.join(root, relative); try { hashes.set(relative, createHash('sha256').update(await readFile(file)).digest('hex')); } catch { /* directories */ } }
+  const resumed = await call(t, root, 'course.resume');
+  assert.equal(resumed.child.status, 0, resumed.child.stdout);
+  assert.equal(resumed.result.state.assessments.quiz.state, 'passed');
+  assert.equal(resumed.result.state.attempts['attempt-1'].response, 'Layers preserve incremental changes.');
+  assert.equal(resumed.result.state.assessments.quiz.latestGrade.criteria[0].criterionId, 'reasoning');
+  for (const [relative, digest] of hashes) assert.equal(createHash('sha256').update(await readFile(path.join(root, relative))).digest('hex'), digest, `${relative} remains unchanged by resume`);
+});
+
+test('resume reports bounded public metadata for the precise failing history record', async (t) => {
+  const { root } = await fixture(t);
+  let created = await call(t, root, 'course.init', { courseId: 'diagnostics', learnerContext: {}, goal: 'Learn', prerequisites: [], readingRateWpm: 238, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }], assessments: {}, assignments: {} }, { revision: 0 }); assert.equal(created.child.status, 0, created.child.stdout);
+  created = await call(t, root, 'assessment.prepare', { assessmentId: 'quiz', objective: 'Explain', outcomeIds: ['outcome-1'], rubricRevision: 1, questions: [{ questionId: 'q1', prompt: 'Explain?', type: 'free_text', expected: 'PRIVATE_RESPONSE' }], criteria: [{ criterionId: 'c1', maxPoints: 1, essential: true, independenceRequired: true }], keyPath: 'assessments/private-key.md', key: 'PRIVATE_KEY' }, { revision: 1 }); assert.equal(created.child.status, 0, created.child.stdout);
+  const statePath = path.join(root, 'state.json'); const state = JSON.parse(await readFile(statePath, 'utf8'));
+  const ref = state.recordRefs[1]; const recordPath = path.join(root, ref.path); const record = JSON.parse(await readFile(recordPath, 'utf8'));
+  record.payload.outcomeIds = ['undeclared'];
+  const bytes = `${JSON.stringify(record, null, 2)}\n`; await writeFile(recordPath, bytes);
+  ref.sha256 = createHash('sha256').update(bytes).digest('hex'); await writeFile(statePath, `${JSON.stringify(state, null, 2)}\n`);
+  const savedState = await readFile(statePath); const savedRecord = await readFile(recordPath);
+  const resumed = await call(t, root, 'course.resume');
+  assert.equal(resumed.child.status, 1); assert.equal(resumed.result.error.code, 'CORRUPT_STATE');
+  assert.equal(resumed.result.state, undefined); assert.equal(resumed.result.progress, undefined); assert.equal(resumed.result.records, undefined);
+  assert.deepEqual(resumed.result.error.details, { stage: 'history_replay', recordId: ref.recordId, kind: 'assessment_prepared', revision: 2, causeCode: 'CORRUPT_STATE' });
+  assert.doesNotMatch(resumed.child.stdout, /PRIVATE_RESPONSE|PRIVATE_KEY|\["undeclared"\]/);
+  assert.deepEqual(await readFile(statePath), savedState); assert.deepEqual(await readFile(recordPath), savedRecord);
+});
+
 test('dispatch projects explicit learner-safe views without leaking arbitrary question fields', async (t) => {
   const { root } = await fixture(t);
   const init = await call(t, root, 'course.init', { courseId: 'course-1', learnerContext: {}, goal: 'Learn', prerequisites: [], readingRateWpm: 238, lessons: [{ lessonId: 'lesson-1', outcomeIds: ['outcome-1'] }], assessments: {}, assignments: {} }, { revision: 0 });

@@ -103,4 +103,10 @@ Do not use `assessment.prepare`, `question.present`, `answer.record`, or `attemp
 
 On successful resume, `course.resume` returns committed state to its direct caller, but dispatched public output may omit learner context. Read committed `state.json` through existing file tools to obtain the snapshot; do not infer absence from filtered helper output. A failed/corrupt resume does not validate learner context as history. Legacy courses without the property remain valid and have no retrospective questionnaire requirement. Before initialization, intake relies on the conversation and has no durable pending-token or recovery guarantee. On failed initialization/bootstrap, do not claim intake was saved; retain existing conflict, retry, idempotency, and post-commit notes semantics. Never manually overwrite state to patch questionnaire data.
 
+## Failed resume recovery
+
+Use the helper at the exact installed path discovered through the host's normal skill metadata or path-discovery flow, and confirm that the loaded helper is current for the active installation. The package version `0.1.0` alone does not establish freshness because multiple builds share that version. If resume reports a replay failure, check freshness once; if the helper may be stale, refresh or reload the installed skill through the host's normal flow and retry `course.resume` against the same course. If the retry still fails, stop and report that validated resume could not be completed. Never treat manually inspecting `state.json`, `classnotes.md`, or record files as validated progress, and never edit them or bypass integrity checks to recover. Replay diagnostics identify only the failing record metadata and safe cause code; the top-level error code remains authoritative.
+
+When a record fails during replay, `error.details` may be `{stage:"history_replay",recordId,kind,revision,causeCode}`. The metadata fields are included only when valid; `causeCode` is a safe allowlisted code. This detail never contains record payloads, keys, or learner responses and is absent for other failure stages.
+
 

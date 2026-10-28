@@ -118,7 +118,14 @@ function learnerView(result) {
   if (typeof result.ambiguous === 'boolean') view.ambiguous = result.ambiguous;
   if (result.selected) view.selected = pick(result.selected, ['courseId', 'phase', 'revision', 'courseRoot']);
   if (result.courseRoot) view.courseRoot = result.courseRoot;
-  if (result.error) view.error = pick(result.error, ['code', 'message']);
+  if (result.error) {
+    view.error = pick(result.error, ['code', 'message']);
+    const d = result.error.details;
+    const safeCodes = new Set(['INVALID_INPUT', 'UNSUPPORTED_SCHEMA', 'CONFLICT', 'CORRUPT_STATE', 'PATH_ESCAPE', 'IO_ERROR', 'STALE_QUESTION', 'INVALID_GRADE', 'NOT_READY']);
+    if (d?.stage === 'history_replay' && safeCodes.has(d.causeCode)) {
+      view.error.details = { stage: 'history_replay', ...(typeof d.recordId === 'string' && /^[A-Za-z0-9_-]{1,128}$/.test(d.recordId) ? { recordId: d.recordId } : {}), ...(typeof d.kind === 'string' && /^[a-z_]{1,64}$/.test(d.kind) ? { kind: d.kind } : {}), ...(Number.isSafeInteger(d.revision) && d.revision > 0 ? { revision: d.revision } : {}), causeCode: d.causeCode };
+    }
+  }
   return view;
 }
 

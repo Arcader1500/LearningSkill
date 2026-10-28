@@ -42,7 +42,7 @@ export async function readCourse(root) {
     const replayedArtifactRefs = mergeArtifactRefs([], records.flatMap((record) => record.artifactRefs ?? []));
     if (JSON.stringify(replayedArtifactRefs) !== JSON.stringify(state.artifactRefs)) fail('CORRUPT_STATE', 'Checkpoint artifact references do not match committed records');
     if (records.length !== state.revision) fail('CORRUPT_STATE', 'Checkpoint revision does not match its record history');
-    const replayed = records.length ? reduceState(null, records) : validateState(state);
+    const replayed = records.length ? reduceState(null, records, { historyReplay: true }) : validateState(state);
     const { recordRefs: _actualRefs, artifactRefs: _actualArtifacts, ...actual } = state;
     const { recordRefs: _replayedRefs, artifactRefs: _replayedArtifacts, ...expected } = replayed;
     if (JSON.stringify(actual) !== JSON.stringify(expected)) fail('CORRUPT_STATE', 'Checkpoint does not match its committed record history');

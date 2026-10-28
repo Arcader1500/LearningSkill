@@ -218,7 +218,7 @@ export async function resumeCourse(root) {
   let loaded;
   try { loaded = await readCourse(root); }
   catch (error) {
-    return { ok: false, courseRoot: path.resolve(root), error: { code: error.code ?? 'CORRUPT_STATE', message: error.message } };
+    return { ok: false, courseRoot: path.resolve(root), error: { code: error.code ?? 'CORRUPT_STATE', message: error.message, ...(error.details?.stage === 'history_replay' ? { details: error.details } : {}) } };
   }
   const { state, records } = loaded;
   const manifest = state.courseManifest ?? [...records].reverse().find((record) => ['course_published', 'course_revised'].includes(record.kind))?.payload.manifest;
