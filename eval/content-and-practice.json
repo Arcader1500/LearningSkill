@@ -1,0 +1,60 @@
+{
+  "schemaVersion": 1,
+  "guidance": "Manual or model-driven teaching evaluation. Record direct evidence before changing not_run; package tests and an edited existing course do not establish fresh teaching behavior.",
+  "cases": [
+    {
+      "scenarioId": "keywords-and-clear-short-lesson",
+      "initialLearnerContext": { "experience": "intermediate Python; new to asyncio" },
+      "startingPrompt": "Teach me how awaiting a coroutine differs from scheduling a task. Keep the scope focused.",
+      "learnerActions": ["Read the lesson and overview", "Find the concept again using the keyword index", "Trace both demonstrated behaviors"],
+      "forbiddenShortcuts": ["Mandatory visible Outcome section", "Skip async fundamentals because Python experience is intermediate", "Show only awaiting while assessing scheduling", "Pad reading or duplicate nearby prose in the recap"],
+      "requiredObservedEvidence": ["Concrete Keywords section and matching indexed lesson link", "Problem introduced before unfamiliar terms", "Clear explanations and examples of both behaviors", "Proportionate recap and separate practice estimate"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "assignment-question-and-scoring-placement",
+      "initialLearnerContext": { "experience": "completed tasks and timeout lessons" },
+      "startingPrompt": "Give me an assignment implementing a small concurrent client simulation.",
+      "learnerActions": ["Identify the question, constraints and files to submit", "Distinguish required behavior from design choices", "Inspect written questions and scoring placement"],
+      "forbiddenShortcuts": ["General theory essay duplicating the quiz", "Require notes when the artifact already supplies the evidence", "Rubric table before task/submission/next-step instructions", "Hide expected behavior in private scoring criteria"],
+      "requiredObservedEvidence": ["Question-shaped task with input/output and failure expectations", "Clear deliverables, constraints, choices and observable checks", "Written explanations only about this implementation when needed", "Detailed scoring private or in the final section; answer key private"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "capstone-practice-after-final-lesson",
+      "initialLearnerContext": { "experience": "can await and schedule simple coroutines; has not built a service" },
+      "startingPrompt": "Help me learn enough asyncio to build a local service with clients and background jobs.",
+      "learnerActions": ["Review the lesson and practice sequence", "Complete a small handler task", "Extend it with a client", "Continue remaining practice after the final lesson", "Integrate the final service"],
+      "forbiddenShortcuts": ["Jump directly from sleep simulation to a whole service", "Add empty lessons just to link assignments", "Require rebuilding all prior work from scratch", "Use conflicting protocols or circular prerequisites", "Provide the complete capstone solution"],
+      "requiredObservedEvidence": ["Manageable intermediate tasks add meaningful capabilities and reuse artifacts", "Practical signatures, data shapes, relevant APIs and a starting order", "Consistent behavior and protocol across lesson and briefs", "Ordered next-assignment links through the capstone and finish checkpoint", "Optional/required declarations agree with saved work indexes"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "practice-offers-and-deferred-work",
+      "initialLearnerContext": { "courseState": "registered assignments with explicit optional and required flags" },
+      "startingPrompt": "I finished this lesson. Continue with my next action.",
+      "learnerActions": ["Finish the required quiz", "Observe the ready assignment offer", "Defer optional practice", "Resume with a pending question or ungraded submission", "Finish the last lesson and continue the assignment chain"],
+      "forbiddenShortcuts": ["Silently bypass assignments because quizzes passed", "Make optional practice an unavoidable dependency", "Overwrite a pending question", "Treat ungraded submission as passed", "Declare completion while required practice remains"],
+      "requiredObservedEvidence": ["Explicit practice purpose, link and optional/required status at checkpoint", "Deferral honored and alternative starting point for optional dependencies", "Pending question and submitted evidence preserved", "Next assignment offered after review even without a following lesson", "Saved completion requirements and learner-facing status agree"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "operational-assignment-direction",
+      "initialLearnerContext": { "experience": "basic Linux; new to container build practice" },
+      "startingPrompt": "Give me hands-on practice changing a Dockerfile to preserve dependency cache reuse.",
+      "learnerActions": ["Locate the starting files and working directory", "Identify relevant commands and first edit", "Predict then optionally inspect the result"],
+      "forbiddenShortcuts": ["Only repeat caching theory", "Supply a complete Dockerfile solution", "Assume Docker or network availability", "Claim an unrun build succeeded"],
+      "requiredObservedEvidence": ["Concrete entry points, relevant commands and expected observations", "Provided resources and environment assumptions explicit", "Direction leaves ordering and implementation work to the learner", "Required static deliverables distinguished from optional runtime evidence"],
+      "outcome": "not_run"
+    },
+    {
+      "scenarioId": "existing-course-practice-revision",
+      "initialLearnerContext": { "courseState": "partially completed course; old attempts and learner files exist; assignments index empty" },
+      "startingPrompt": "Improve this course and add intermediate practice before its capstone. Preserve my work.",
+      "learnerActions": ["Record hashes of learner answers and existing keys", "Inspect the revised practice sequence", "Resume through the supported helper", "Compare old progress and attempts"],
+      "forbiddenShortcuts": ["Hand-edit state or historical records to register assignments", "Reset old progress", "Overwrite learner work", "Claim practice is tracked when no assignment index exists", "Retroactively add required completion work without agreement"],
+      "requiredObservedEvidence": ["Explicit material revision and valid material hashes", "Old learner files, keys and evidence preserved", "Added practice links and tracking limits clearly described", "Optional practice and saved course completion kept distinct"],
+      "outcome": "not_run"
+    }
+  ]
+}
