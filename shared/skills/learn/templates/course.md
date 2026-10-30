@@ -14,12 +14,15 @@ By the end, the learner can {{observable outcome}}.
 - Pre-course intake: {{concise summary of relevant answers, uncertainties, and course adjustments; or skipped/not needed/not recorded}}
 
 ## Lesson sequence
-1. [{{Lesson title}}](lessons/{{lesson-file}}.md) — {{outcome}}; required evidence: {{evidence}}
+1. [{{Lesson title}}](lessons/{{lesson-file}}.md) — Keywords: {{searchable concepts and APIs taught}}; required evidence: {{evidence}}
+
+## Practice sequence
+{{Link each assignment in order, mark it optional or required, and identify when it becomes ready: a lesson checkpoint or the preceding assignment. For a capstone, show manageable intermediate tasks and the artifacts each builds on. Practice may continue after the final lesson; do not add artificial lessons for assignment handoffs.}}
 
 ## Required material and evidence
 - Core reading: {{linked lesson files and verified external readings}}
 - Assessments: {{assessment IDs/files and outcomes}}
-- Assignments: {{assignment files or none}}
+- Assignments: {{linked briefs or none; requirement status must agree with the practice sequence and saved work declarations}}
 - Sources/version assumptions: {{official/local references, versions, verification date/context}}
 
 ## Estimates

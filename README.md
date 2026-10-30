@@ -119,13 +119,17 @@ For developers, the bundled helper accepts one JSON request-file path: `node scr
 ## What a course contains
 
 1. **Course overview:** your goal, starting experience, prerequisites, focused scope, lesson sequence, source/version assumptions, and separate reading, practice, and setup estimates.
-2. **Written lessons:** complete core reading prepared before guided teaching, with observable outcomes, explanations, examples, common mistakes, recap, sources, optional depth, and a next action.
+2. **Written lessons:** complete core reading prepared before guided teaching, with searchable keywords, clear explanations and examples, common mistakes, proportionate recaps, sources, optional depth, and a next action. The overview indexes keywords by lesson; learning objectives still guide assessment internally.
 3. **Discussion and notes:** your actual questions, useful explanation summaries, follow-ups, and progress recorded in readable classnotes.
 4. **Assessment:** post-lesson quizzes unless explicitly excluded or skipped, with saved prompts and fixed rubrics. Reading completion alone does not award a pass.
-5. **Assignments where appropriate:** a brief, starting resources, environment prerequisites, constraints, learner answer location, evidence requirements, rubric, and cleanup steps. You author the solution; submitted bytes are snapshotted for grading.
+5. **Assignments where appropriate:** a question with clear behavior, resources, constraints, deliverables, and checks; practical interface or operational guidance when needed. Written questions concern your own work. Scoring details stay private or appear last. You author the solution; submitted bytes are snapshotted for grading.
 6. **Feedback and continuation:** criterion scores, evidence references, help conditions, fresh independent checks after assistance, and a saved next action. Finishing with pending or skipped requirements records exceptions.
 
 Scope and lesson count depend on the topic. Short topics stay short; broad goals can become focused follow-on courses. Practice and setup time are separate from reading estimates.
+
+Substantial projects build through manageable assignments that reuse earlier work. The tutor offers practice at relevant checkpoints, with explicit optional/required status. A linked assignment sequence can continue after the final lesson through the capstone; assignments do not each need a separate lesson.
+
+Content and practice quality checks are described in [the focused evaluation cases](eval/content-and-practice.json). These require direct teaching evidence; automated package checks alone do not establish that the tutor follows the guidance.
 
 ### Coursework directory
 

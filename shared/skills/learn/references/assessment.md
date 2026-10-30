@@ -14,6 +14,8 @@ For example, a one-point question asks the learner to predict whether a cached l
 
 ## Fair questions
 
+Choose a question format that tests the objective; open-ended quizzes are valid and need no forced mix of formats. Quiz questions may assess general concepts. Written assignment questions should assess decisions or behavior in the learner's specific artifact, without repeating the general quiz. Assess only concepts and implementation skills prepared by the reading, practical references, or earlier practice; revise preparation before presentation when there is a gap.
+
 Prefer explanation, application, prediction, comparison, and diagnosis over bare recall when the objective permits. A distractor should express a plausible misconception or incomplete model, not a joke or obviously irrelevant answer. Keep choices similar in length, specificity, grammar, and confidence. Shuffle answer positions where useful. Do not mark a choice recommended or make correctness inferable from position, wording length, elaboration, or recommendation labels. Avoid reusing an earlier question's answer as a later question's clue. Check that each item is answerable from taught material and has one defensible key or an explicit rubric for open responses.
 
 Ask one coherent question at a time when interaction routing benefits from it. Explain what kind of response is useful without hinting at the answer. If the learner asks to defer, is interrupted, or the tool returns no explicit response, leave the saved question pending. Never infer an answer from a card delivery or default.

@@ -6,6 +6,22 @@ Use the learner's topic, level, outcome, and constraints to select the smallest 
 
 Prepare all required core reading and linked lesson files before guided teaching starts. Optional depth must be clearly separate from required work. Keep version-sensitive instructions grounded in official current sources or inspected local versions; name versions and assumptions. If research tools are unavailable, state that current behavior was not verified.
 
+## Write lessons that teach
+
+Start each lesson with a short Keywords section naming the concepts and APIs/commands it actually teaches. Repeat these terms alongside lesson links in the course overview so the learner can find them later. Keep observable objectives for course design and assessment alignment; they do not require a visible Outcome section or a new saved-state field.
+
+Introduce the problem and connect it to previous learning before presenting unfamiliar concepts. Define new terms where used, explain why steps or ideas connect, and demonstrate important distinctions with worked examples. A mention or documentation link is not enough preparation for an assessed implementation. For example, if a lesson compares awaiting and scheduling, show and explain both behaviors.
+
+Experience changes which basics need teaching, not the clarity of the language. Use direct sentences and enough explanation for a new concept; do not substitute dense lists of requirements for teaching. Choose length for understanding, without padding or an arbitrary minimum. Retain recaps as proportionate synthesis: a short lesson needs little recap, while a longer lesson may need connections and decisions brought together.
+
+A project-focused lesson must add practical preparation beyond restating architecture or linking a brief. When appropriate, provide function/interface signatures, inputs and outputs, relevant APIs, or operational entry points and expected observations. Explain ownership and how components connect, then suggest a starting order without giving the complete solution. Check that example names, protocols, prerequisites, and requirements agree with the assignment.
+
+## Build a practice sequence
+
+For a substantial capstone, identify the component skills it combines and provide manageable intermediate assignments for skills not already practised. Reuse learner-authored artifacts while adding a meaningful capability at each step. For example: implement a handler, connect a client to it, then integrate bounded workers and two-way job/status communication. Adapt the steps to the topic; do not require this particular architecture everywhere.
+
+Assignments need not correspond one-to-one with lessons. A course can alternate lessons and practice, then finish with several linked assignments after the final lesson. Show that sequence in `course.md` and link each brief to the next. Do not invent a lesson solely to hand off an assignment. State what is optional or required and provide an alternative starting point when later work depends on skipped optional practice. Keep the progression focused on the learner's goal rather than adding exercises for volume.
+
 ## Optional pre-course intake
 
 Before authoring a new course, consider the learner's goal, requested starting point, experience, and intended outcome. Identify the smallest set of prerequisites that actually affects the course. If uncertainty about those prerequisites could change explanations or pacing, briefly offer an optional questionnaire and an explicit way to skip. Do not make intake obligatory when no meaningful prerequisites exist. A skip proceeds with visible provisional assumptions; it does not create an extra course-plan approval gate.
@@ -22,11 +38,13 @@ Estimate required prose reading as required word count divided by a configurable
 
 ## Guided teaching
 
-Begin with a lesson outcome and connect explanations to learner goals. Use examples to clarify the concept, then invite the learner to explain, compare, predict, diagnose, or apply it. Ask a focused follow-up when reasoning is unclear. Adapt pacing to observed work rather than elapsed time.
+Orient the learner using the lesson's keywords, the problem it addresses, and its connection to their goal. Use examples to clarify the concept, then invite the learner to explain, compare, predict, diagnose, or apply it. Ask a focused follow-up when reasoning is unclear. Adapt pacing to observed work rather than elapsed time.
 
 For Q&A, preserve the learner's actual question, a useful summary of the explanation, relevant lesson, and an actual follow-up when one occurs. Record misconceptions only when supported by the learner's words or work. Clearly label tutor-created examples so they cannot be mistaken for learner errors. A classnotes entry should help a future session continue usefully, not merely repeat a transcript.
 
 After the learner reports reading complete, acknowledge it as self-report and keep required assessment pending. Do not infer mastery, quiz completion, or assignment completion from page navigation, elapsed time, or the reading report. Present the next action and allow retry, skip, or continuation where the course permits.
+
+At the relevant lesson/quiz checkpoint, explicitly offer ready assignments rather than relying on links in the overview. Give the purpose, brief link, and optional/required status; honor a learner's choice to defer or continue. After assignment review, offer the next step in the practice sequence, including after the last lesson. Preserve pending questions and submitted-but-ungraded work when selecting the next action. Reading or quiz completion does not imply that the practice sequence is complete.
 
 ## Sources and revisions
 
