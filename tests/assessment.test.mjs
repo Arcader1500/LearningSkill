@@ -83,3 +83,18 @@ test('records help and rubric evidence; assisted points require a fresh independ
   assert.equal((await gradeAttempt(root, freshGradeRequest)).revision, 10);
   await assert.rejects(gradeAttempt(root, { operationId: 'bad-grade', expectedRevision: 11, assessmentId: 'assessment-2', attemptId: 'attempt-2', rubricRevision: 2, criteria: [], evidence: [], feedback: 'bad' }), { code: 'INVALID_GRADE' });
 });
+
+test('Cargo rubric keeps partial and unsupported evidence below essential pass, and accepts equivalent complete explanations', async (t) => {
+  const { readFile } = await import('node:fs/promises');
+  const fixture = JSON.parse(await readFile('eval/criterion-evidence.json', 'utf8'));
+  for (const [index, example] of fixture.cases.entries()) {
+    const root = await course(t);
+    await prepareAssessment(root, { ...common, criteria: [fixture.criterion], key: fixture.rule, questions: [{ questionId: 'cargo', prompt: 'Explain Cargo dependencies, builds/tests and compiler invocation.', type: 'free_text' }], operationId: 'prepare', expectedRevision: 1 });
+    await presentQuestion(root, { operationId: 'present', expectedRevision: 2, assessmentId: common.assessmentId, questionId: 'cargo', attemptId: 'try', presentationToken: 'token' });
+    await acceptAnswer(root, { operationId: 'answer', expectedRevision: 3, assessmentId: common.assessmentId, questionId: 'cargo', attemptId: 'try', presentationToken: 'token', response: example.response });
+    const result = await gradeAttempt(root, { operationId: 'grade', expectedRevision: 4, assessmentId: common.assessmentId, attemptId: 'try', rubricRevision: 1, assistance: 'none', evidence: [{ evidenceId: 'answer-try', provenance: 'learner_supplied' }], criteria: [{ criterionId: 'cargo', points: example.points, feedback: example.missing.length ? `Missing: ${example.missing.join(', ')}` : 'All required parts supported.', evidenceRefs: ['answer-try'], independent: true }], feedback: `Reviewed case ${index}` });
+    assert.equal(result.state.assessments[common.assessmentId].state === 'passed', example.passed);
+    assert.equal(result.state.attempts.try.response, example.response);
+    assert.equal(result.state.assessments[common.assessmentId].rubricRevision, 1);
+  }
+});

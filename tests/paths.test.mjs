@@ -1,6 +1,6 @@
 import { test } from 'node:test';
 import assert from 'node:assert/strict';
-import { mkdtemp, symlink, rm } from 'node:fs/promises';
+import { mkdtemp, symlink, rm, writeFile } from 'node:fs/promises';
 import path from 'node:path';
 import { resolveCourseRoot, resolveContained } from '../src/paths.mjs';
 
@@ -13,6 +13,7 @@ test('selects course roots and rejects traversal and escaping links', async (t) 
   assert.equal(await resolveContained(path.join(base, 'not-created'), 'course', { allowMissing: true }), path.join(base, 'not-created', 'course'));
   const outside = await mkdtemp(path.join(process.cwd(), '.test-tmp-out-'));
   t.after(() => rm(outside, { recursive: true, force: true }));
+  await writeFile(path.join(outside, 'file'), 'outside sentinel');
   try {
     await symlink(outside, path.join(base, 'link'), 'junction');
     await assert.rejects(resolveContained(base, 'link/file'), { code: 'PATH_ESCAPE' });

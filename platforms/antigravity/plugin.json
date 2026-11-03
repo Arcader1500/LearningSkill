@@ -1,6 +1,6 @@
 {
   "name": "learning-skill",
-  "description": "Create and teach personalized courses, assess understanding, review learner work, and resume saved progress.",
+  "description": "Create courses with create-course; teach, assess and resume saved courses with learn.",
   "version": "0.1.0",
   "suggestedPrompts": [
     "Help me create a course to learn a topic",

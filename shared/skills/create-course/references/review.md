@@ -1,0 +1,15 @@
+# Pre-initialization authoring review
+
+Before course.bootstrap or course.init, review the authored files against the exact initialization and publication payloads. This is an authoring check using the existing protocol, not a new state operation or learner workflow.
+
+1. Walk the learner path from the first setup command, resolve its working directory, open the first lesson, locate its exact quiz ID and question file, follow every ready assignment and resolve each exact submission path from the course root. Use a disposable workspace for command checks; distinguish inspected commands from commands actually executed.
+2. Compare lesson order, IDs, links, outcomes and material roles with the manifest. Compare each quiz with prepared assessment IDs/questions. Compare every assignment's authored lesson checkpoint/dependencies and required/optional flag against the existing lesson requiredAssignmentIds and work declarations in init.assignments. Readiness/sequence beyond those declarations is authoring guidance, not a new protocol field. Check initial status against init.assignments. Include multiple assignments at one checkpoint and work after the final lesson. No assignment may disappear from the learner path or be shown ready prematurely.
+3. Confirm required work uses concepts already taught. For each task, identify its input domain and failure policy where needed. Trace each acceptance case and rubric part to requested behavior and supplied fixtures; reject checks that require unspecified behavior or omit a required boundary/failure case. Keep keys private.
+4. Scan all learner files together: shared versions, setup and submission instructions live once in course.md; assignment exceptions must be actual exceptions. Each lesson has one Practice and next steps section. Remove tutor-policy boilerplate (evidence classifications, pending tokens, snapshots and grading transitions); use Worked example labels.
+5. Fix findings, repeat affected checks and summarize results in the authoring response/private review notes. Report concrete files/links examined and commands/examples actually run, with unrun limits. Only then initialize. Preserve existing courses and grades.
+
+## Disposable demonstration
+
+Build two lessons with quiz-1 and quiz-2, and assignments a and b ready after lesson-1 plus c after the final lesson dependent on b. Use course.md as the only shared workflow and answers/a/, answers/b/ and answers/c/ as explicit submission directories.
+
+Inject three defects before review: setup changes to workspace/exercises while a expects course-root answers/a/; b repeats the entire shared submission workflow; c specifies nonnegative integers but its acceptance case requires negative-input success. The path walk flags the first, the cross-file scan the second, and the specification-to-case trace the third. Fix the working directory, replace duplicated instructions with the shared link, and align the case to the input policy. Recheck both assignments at the first checkpoint and c after the last lesson, then initialize the corrected disposable sample. Record actual execution separately from this illustrative checklist.

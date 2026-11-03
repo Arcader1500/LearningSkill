@@ -8,11 +8,12 @@ import { validatePlugins } from '../scripts/validate-plugins.mjs';
 
 const source = path.resolve('.');
 const expectedAssets = [
+  'skills/create-course/SKILL.md', 'skills/create-course/references/review.md', 'skills/create-course/docs/protocol.md', 'skills/create-course/scripts/learning-state.mjs',
   'skills/learn/SKILL.md', 'skills/learn/docs/protocol.md',
   'skills/learn/references/teaching.md', 'skills/learn/references/persistence.md',
   'skills/learn/references/assignments.md', 'skills/learn/references/assessment.md',
-  'skills/learn/templates/course.md', 'skills/learn/templates/lesson.md',
-  'skills/learn/templates/assignment.md', 'skills/learn/scripts/learning-state.mjs',
+  'skills/create-course/templates/course.md', 'skills/create-course/templates/lesson.md',
+  'skills/create-course/templates/assignment.md', 'skills/learn/scripts/learning-state.mjs',
   ...['assessment','course','dispatch','errors','model','notes','paths','store'].map(name => `skills/learn/src/${name}.mjs`),
 ];
 
@@ -71,7 +72,7 @@ test('validator detects tampering, missing assets, version mismatch, and escapin
   await writeFile(path.join(distRoot, 'codex/skills/learn/docs/protocol.md'), 'tampered');
   assert.equal((await validatePlugins({ root, distRoot })).ok, false);
   await buildPlugins({ root, distRoot });
-  await rm(path.join(distRoot, 'codex/skills/learn/templates/course.md'));
+  await rm(path.join(distRoot, 'codex/skills/create-course/templates/course.md'));
   assert.equal((await validatePlugins({ root, distRoot })).ok, false);
   await buildPlugins({ root, distRoot });
   await writeFile(path.join(distRoot, 'codex/skills/learn/SKILL.md'), `${await readFile(path.join(distRoot, 'codex/skills/learn/SKILL.md'), 'utf8')}\n[escape](../../../../../../outside.md)\n`);
@@ -99,12 +100,15 @@ test('builder rejects source and destination symlinks without touching their tar
   const { root, distRoot } = await fixture(t);
   const outside = path.join(path.dirname(root), `${path.basename(root)}-outside`); await mkdir(outside); await writeFile(path.join(outside, 'keep'), 'safe');
   t.after(() => rm(outside, { recursive: true, force: true }));
-  try { await symlink(outside, path.join(root, 'shared', 'skills', 'learn', 'templates', 'linked'), 'junction'); }
+  const linked = path.join(root, 'shared', 'skills', 'create-course', 'templates', 'assignment.md');
+  await rm(linked);
+  try { await symlink(path.join(outside, 'keep'), linked, 'file'); }
   catch (error) { if (['EPERM', 'EACCES', 'ENOTSUP'].includes(error.code)) { t.skip(`Symlink creation unavailable: ${error.code}`); return; } throw error; }
   await assert.rejects(buildPlugins({ root, distRoot }));
   assert.equal(await readFile(path.join(outside, 'keep'), 'utf8'), 'safe');
-  await rm(path.join(root, 'shared', 'skills', 'learn', 'templates', 'linked'));
-  await mkdir(distRoot); await symlink(outside, path.join(distRoot, 'codex'), 'junction');
+  await rm(linked);
+  await cp(path.join(source, 'shared/skills/create-course/templates/assignment.md'), linked);
+  await mkdir(distRoot, { recursive: true }); await symlink(outside, path.join(distRoot, 'codex'), 'junction');
   await assert.rejects(buildPlugins({ root, distRoot }));
   assert.equal(await readFile(path.join(outside, 'keep'), 'utf8'), 'safe');
 });

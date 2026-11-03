@@ -31,7 +31,7 @@ test('both packaged helpers preserve questionnaire context through compact boots
       initialProgress: [{ lessonId: 'one', reading: 'in_progress', nextAction: 'Discuss layer reuse' }],
     },
   };
-  const helper = path.join(root, `dist/${platform}/skills/learn/scripts/learning-state.mjs`);
+  let helper = path.join(root, `dist/${platform}/skills/create-course/scripts/learning-state.mjs`);
   const run = (...args) => {
     const child = spawnSync(process.execPath, [helper, ...args], { encoding: 'utf8' });
     assert.ifError(child.error);
@@ -57,6 +57,7 @@ test('both packaged helpers preserve questionnaire context through compact boots
   assert.equal(run('--cleanup-request', requestPath).idempotent, true);
   assert.deepEqual(JSON.parse(await readFile(path.join(courseRoot, 'state.json'), 'utf8')).learnerContext, request.payload.init.learnerContext);
   await writeFile(requestPath, JSON.stringify({ protocolVersion: 1, op: 'course.resume', workspaceRoot: root, courseRoot, responseMode: 'compact' }));
+  helper = path.join(root, `dist/${platform}/skills/learn/scripts/learning-state.mjs`);
   const resumed = run(requestPath);
   assert.equal(resumed.state.phase, 'active');
   assert.equal(resumed.state.revision, 4);

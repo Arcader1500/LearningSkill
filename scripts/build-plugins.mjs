@@ -7,7 +7,7 @@ const here = path.dirname(fileURLToPath(import.meta.url));
 const OWNER = '.learningskill-owned.json';
 const ownerValue = JSON.stringify({ owner: 'learning-skill-build-plugins', version: 1 });
 const platforms = ['codex', 'antigravity'];
-const sharedFiles = ['SKILL.md', 'references/teaching.md', 'references/persistence.md', 'references/assignments.md', 'references/assessment.md', 'templates/course.md', 'templates/lesson.md', 'templates/assignment.md'];
+const skillFiles = { learn: ['SKILL.md', 'references/teaching.md', 'references/persistence.md', 'references/assignments.md', 'references/assessment.md'], 'create-course': ['SKILL.md', 'references/authoring.md', 'references/assignments.md', 'references/persistence.md', 'references/review.md', 'templates/course.md', 'templates/lesson.md', 'templates/assignment.md'] };
 
 function inside(root, target) {
   const rel = path.relative(root, target);
@@ -81,18 +81,20 @@ export async function buildPlugins({ root = path.resolve(here, '..'), distRoot =
   try {
     for (const platform of platforms) {
       const stage = stages[platform]; await mkdir(stage);
-      for (const file of sharedFiles) await writeCopy(root, path.join('shared/skills/learn', file), stage, path.join('skills/learn', file));
+      for (const [skill, sharedFiles] of Object.entries(skillFiles)) {
+      for (const file of sharedFiles) await writeCopy(root, path.join('shared/skills', skill, file), stage, path.join('skills', skill, file));
       for (const rel of ['docs/protocol.md', ...srcFiles]) {
         const source = rel === 'docs/protocol.md' ? 'docs/protocol.md' : rel;
-        const destination = rel.startsWith('src') ? path.join('skills/learn', rel) : path.join('skills/learn/docs/protocol.md');
+        const destination = rel.startsWith('src') ? path.join('skills', skill, rel) : path.join('skills', skill, 'docs/protocol.md');
         await writeCopy(root, source, stage, destination);
       }
-      await writeCopy(root, 'scripts/learning-state.mjs', stage, 'skills/learn/scripts/learning-state.mjs');
-      const adapterPath = path.join(root, `platforms/${platform}/adapter.md`);
+      await writeCopy(root, 'scripts/learning-state.mjs', stage, `skills/${skill}/scripts/learning-state.mjs`);
+      const adapterPath = path.join(root, `platforms/${platform}/${skill === 'learn' ? 'adapter.md' : 'create-course-adapter.md'}`);
       await assertNoLinks(root, adapterPath);
       const adapter = await readFile(adapterPath, 'utf8');
-      const skillFile = path.join(stage, 'skills/learn/SKILL.md');
+      const skillFile = path.join(stage, 'skills', skill, 'SKILL.md');
       await writeFile(skillFile, `${await readFile(skillFile, 'utf8').then(value => value.trimEnd())}\n\n${adapter.trim()}\n`);
+      }
       const sourceManifest = path.join(root, `platforms/${platform}/plugin.json`);
       await assertNoLinks(root, sourceManifest);
       const manifest = JSON.parse(await readFile(sourceManifest, 'utf8'));

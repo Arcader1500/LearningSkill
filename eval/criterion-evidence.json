@@ -1,0 +1,10 @@
+{
+  "criterion": {"criterionId":"cargo", "maxPoints":3, "essential":true, "independenceRequired":true},
+  "rubricRevision":1,
+  "rule":"One point per supported part: dependency management, builds/tests, invoking rustc. Full credit requires all three.",
+  "cases":[
+    {"response":"Cargo is a package manager.","points":1,"passed":false,"missing":["builds/tests","invoking rustc"]},
+    {"response":"It resolves dependencies, builds the project and runs tests, calling Rust's compiler to produce binaries.","points":3,"passed":true,"missing":[]},
+    {"response":"It edits images.","points":0,"passed":false,"missing":["dependency management","builds/tests","invoking rustc"]}
+  ]
+}
