@@ -42,7 +42,7 @@ cd "C:\path\to\your-learning-workspace"
 codex
 ```
 
-In the Codex desktop app, open that workspace and start a new chat after installation; reload the app if its plugin list has not refreshed. Select the installed `learn` skill if your surface offers a skill picker, or ask explicitly to use LearningSkill with the first-course prompt below.
+In the Codex desktop app, open that workspace and start a new chat after installation; reload the app if its plugin list has not refreshed. Select the installed `create-course` skill for authoring or `learn` for saved courses if your surface offers a skill picker, or ask explicitly to use LearningSkill with the first-course prompt below.
 
 ### Antigravity (agy)
 
@@ -71,7 +71,7 @@ In either host, send:
 
 > Use LearningSkill to create a concise course on container image layers. I know basic Linux and want to understand layer reuse. Include a diagnostic quiz and a small learner-authored Dockerfile assignment. Save it in this workspace's courses folder.
 
-For a new course, the tutor may first ask a few optional, ungraded questions when prerequisite uncertainty could change the lesson sequence. It distinguishes prerequisite knowledge from familiarity with the requested topic and asks before adding a focused foundation lesson (Lesson 0). You can skip intake or decline that lesson. The tutor prepares and saves the course after useful intake is complete; an accepted Lesson 0 is included in the normal lesson sequence and assessment requirements. Intake answers do not count as quiz answers or course credit.
+For a new course, the tutor may first ask a few optional, ungraded questions when prerequisite uncertainty could change the lesson sequence. It distinguishes prerequisite knowledge from familiarity with the requested topic and asks before adding a focused foundation lesson (Lesson 0). You can skip intake or decline that lesson. The create-course skill prepares and saves the course after useful intake is complete; an accepted Lesson 0 is included in the normal lesson sequence and assessment requirements. Intake answers do not count as quiz answers or course credit.
 
 The course saves a concise learning-context summary with its creation data. Intake happens before a course exists, so unfinished answers are held only in the current conversation; they are not recoverable after a lost chat. A failed course creation does not mean the intake was saved. Existing courses resume from their validated saved context and do not repeat completed intake. See [how it works](docs/how-it-works.md#new-course-intake) and the [intake protocol convention](docs/protocol.md#pre-course-questionnaire-context).
 
@@ -175,3 +175,11 @@ Final verification at HEAD `a645aa2417148eccf71081a0e03aea26895def09` used Node 
 The helper does not edit or execute submitted learner files. Runtime checks that were not actually run remain pending/not run.
 
 If a checkpoint write fails, the tutor should report that the affected change was not saved. If a commit succeeds but rendering notes fails, progress and notes status are reported separately. For recovery, reopen the same course root and inspect its checkpoint and committed records; do not treat unreferenced files or unsaved chat as course history.
+
+## Skill routing and saved-course handoff
+
+Both plugin variants expose `create-course` and `learn`. Select `create-course` to design or revise materials, including optional intake, private rubrics and the pre-initialization review. Select `learn` to teach from saved reading, present questions, review submissions, grade, retry and resume. Ordinary “teach me a new topic” requests route through creation first. “Create and start” commits the course and hands its explicit root to `learn` for course.resume; a fresh tutor session uses only saved files. Existing courses require no migration and retain IDs, pending questions, immutable submissions and original rubric revisions.
+
+Both skills bundle the same protocol/helper implementation relative to their own installed metadata directory. Packaging validates every linked resource for both hosts. The shared environment/setup/submission workflow lives in course.md, whose static entry is Start here; saved progress determines the live next action. See the [authoring review](shared/skills/create-course/references/review.md) and [criterion-evidence example](eval/criterion-evidence.json).
+
+Verification for this change is recorded in [split acceptance](docs/split-acceptance.md). Automated checks do not establish live host discovery or teaching quality.

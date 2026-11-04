@@ -6,7 +6,7 @@ import { builtinModules } from 'node:module';
 
 const here = path.dirname(fileURLToPath(import.meta.url));
 const platforms = ['codex', 'antigravity'];
-const canonicalFiles = ['references/teaching.md', 'references/persistence.md', 'references/assignments.md', 'references/assessment.md', 'templates/course.md', 'templates/lesson.md', 'templates/assignment.md'];
+const resources = { learn: ['references/teaching.md', 'references/persistence.md', 'references/assignments.md', 'references/assessment.md'], 'create-course': ['references/authoring.md', 'references/assignments.md', 'references/persistence.md', 'references/review.md', 'templates/course.md', 'templates/lesson.md', 'templates/assignment.md'] };
 const ownerValue = JSON.stringify({ owner: 'learning-skill-build-plugins', version: 1 });
 
 function within(root, target) {
@@ -55,7 +55,7 @@ function checkMarkdownLinks(text, file, root) {
   for (const match of text.matchAll(/\[[^\]]*\]\(([^)]+)\)/g)) {
     const ref = match[1].trim().replace(/^<|>$/g, '').split(/[?#]/, 1)[0];
     if (!ref || ref.includes('{{') || /^(?:[a-z][a-z0-9+.-]*:|\/\/|#)/i.test(ref)) continue;
-    const isLessonTemplateLink = file.endsWith(`${path.sep}templates${path.sep}lesson.md`) && ref === '../course.md';
+    const isLessonTemplateLink = /[/\\]templates[/\\](?:lesson|assignment)\.md$/.test(file) && ref === '../course.md';
     const target = isLessonTemplateLink ? path.resolve(path.dirname(file), 'course.md') : path.resolve(path.dirname(file), decodeURIComponent(ref));
     if (!within(root, target)) throw new Error(`Escaping resource link in ${file}: ${ref}`);
     const stat = lstatSync(target);
@@ -92,16 +92,16 @@ async function checkModuleImports(text, file, root) {
   }
 }
 
-async function checkSkill(sourceRoot, packageRoot, platform) {
-  const skillFile = await regular(packageRoot, 'skills/learn/SKILL.md');
+async function checkSkill(sourceRoot, packageRoot, platform, skill) {
+  const skillFile = await regular(packageRoot, `skills/${skill}/SKILL.md`);
   const text = await readFile(skillFile, 'utf8');
   const match = text.match(/^---\r?\n([\s\S]*?)\r?\n---\r?\n/);
-  if (!match || !/^name:\s*learn\s*$/m.test(match[1]) || !/^description:\s*\S/m.test(match[1])) throw new Error(`Invalid skill frontmatter: ${platform}`);
-  const canonical = await readFile(path.join(sourceRoot, 'shared/skills/learn/SKILL.md'), 'utf8');
+  if (!match || !new RegExp(`^name:\\s*${skill}\\s*$`, 'm').test(match[1]) || !/^description:\s*\S/m.test(match[1])) throw new Error(`Invalid skill frontmatter: ${platform}`);
+  const canonical = await readFile(path.join(sourceRoot, `shared/skills/${skill}/SKILL.md`), 'utf8');
   const marker = `## ${platform === 'codex' ? 'Codex' : 'Antigravity'} platform bindings`;
   const index = text.indexOf(marker);
   if (index < 0 || text.slice(0, index).trimEnd() !== canonical.trimEnd()) throw new Error(`Canonical skill or appended adapter mismatch: ${platform}`);
-  const adapter = await readFile(path.join(sourceRoot, `platforms/${platform}/adapter.md`), 'utf8');
+  const adapter = await readFile(path.join(sourceRoot, `platforms/${platform}/${skill === 'learn' ? 'adapter.md' : 'create-course-adapter.md'}`), 'utf8');
   if (text.slice(index).trim() !== adapter.trim()) throw new Error(`Platform adapter mismatch: ${platform}`);
 }
 
@@ -128,14 +128,16 @@ export async function validatePlugins({ root = path.resolve(here, '..'), distRoo
     if (JSON.stringify(manifest) !== JSON.stringify(sourceManifest)) throw new Error(`Manifest differs from canonical source: ${platform}`);
     if (manifest.name !== 'learning-skill' || manifest.version !== packageVersion) throw new Error(`Manifest metadata/version mismatch: ${platform}`);
     if (platform === 'codex' && manifest.skills !== './skills/') throw new Error('Codex manifest does not declare the packaged skills directory');
-    await checkSkill(root, packageRoot, platform);
-    for (const rel of canonicalFiles) await checkedCopy(root, packageRoot, `shared/skills/learn/${rel}`, `skills/learn/${rel}`);
-    await checkedCopy(root, packageRoot, 'docs/protocol.md', 'skills/learn/docs/protocol.md');
-    await checkedCopy(root, packageRoot, 'scripts/learning-state.mjs', 'skills/learn/scripts/learning-state.mjs');
-    for (const file of (await readdir(path.join(root, 'src'))).filter(name => name.endsWith('.mjs')).sort()) await checkedCopy(root, packageRoot, `src/${file}`, `skills/learn/src/${file}`);
-    for (const rel of ['skills/learn/docs/protocol.md', 'skills/learn/scripts/learning-state.mjs', ...canonicalFiles.map(file => `skills/learn/${file}`)]) await regular(packageRoot, rel);
+    for (const [skill, canonicalFiles] of Object.entries(resources)) {
+    await checkSkill(root, packageRoot, platform, skill);
+    for (const rel of canonicalFiles) await checkedCopy(root, packageRoot, `shared/skills/${skill}/${rel}`, `skills/${skill}/${rel}`);
+    await checkedCopy(root, packageRoot, 'docs/protocol.md', `skills/${skill}/docs/protocol.md`);
+    await checkedCopy(root, packageRoot, 'scripts/learning-state.mjs', `skills/${skill}/scripts/learning-state.mjs`);
+    for (const file of (await readdir(path.join(root, 'src'))).filter(name => name.endsWith('.mjs')).sort()) await checkedCopy(root, packageRoot, `src/${file}`, `skills/${skill}/src/${file}`);
+    for (const rel of [`skills/${skill}/docs/protocol.md`, `skills/${skill}/scripts/learning-state.mjs`, ...canonicalFiles.map(file => `skills/${skill}/${file}`)]) await regular(packageRoot, rel);
     const sourceModules = (await readdir(path.join(root, 'src'))).filter(name => name.endsWith('.mjs')).sort();
-    for (const file of sourceModules) await regular(packageRoot, `skills/learn/src/${file}`);
+    for (const file of sourceModules) await regular(packageRoot, `skills/${skill}/src/${file}`);
+    }
     for (const file of files) {
       if (file.endsWith('.md')) checkMarkdownLinks(await readFile(file, 'utf8'), file, packageRoot);
       if (file.endsWith('.mjs')) await checkModuleImports(await readFile(file, 'utf8'), file, packageRoot);

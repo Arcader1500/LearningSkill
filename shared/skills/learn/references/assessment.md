@@ -1,9 +1,5 @@
 # Assessment quality
 
-## Ungraded pre-course intake
-
-The optional pre-course questionnaire is conversational course-design evidence, not an assessment. Do not call `assessment.prepare`, `question.present`, `answer.record`, or `attempt.grade` for intake. Its questions, actual responses, and qualitative interpretation belong in `learnerContext.preCourseAssessment` as described by the [protocol](../docs/protocol.md#pre-course-questionnaire-context). Intake creates no pending graded question, attempt, score, pass, exemption, or outcome credit. A later Lesson 0 uses the same ordinary evidence requirements as other lessons.
-
 ## Before presentation
 
 Define the objective, exact prompt, question type, stable option IDs/order when relevant, answer key, and criterion rubric before presenting. Give every criterion an ID, positive maximum points, essential flag, and independence requirement. Save the assessment and question instance before displaying it. Keep expected answers and keys in private assessment material; learner-facing question views contain only the prompt and options.
@@ -27,3 +23,9 @@ Grade the saved answer/submission against the exact saved rubric revision. Retur
 Offer progressive hints before a worked example or full solution unless the learner asks directly. Honor an explicit solution request, record the level of assistance, and do not call the resulting attempt independent. A fresh comparable attempt tests independent performance; it has a new attempt identity and preserves the assisted history. A rubric may not be changed after seeing the answer to make it pass.
 
 See `docs/protocol.md` for stable IDs, pending-question tokens, evidence provenance, score derivation, and transition rules.
+
+## Criterion-level evidence
+
+Before awarding full points, enumerate every required part of the saved criterion and match each part to a quote or location in the saved response or immutable submission. A correct label or one supported subpart does not establish other required behavior. Accept equivalent complete explanations; do not require key wording. Apply the saved partial-credit rules to supported parts only. If the rubric lacks rules sufficient for a defensible score, leave the attempt ungraded/needs review rather than inventing a passing interpretation. Feedback names the missing behavior and references actual saved evidence.
+
+Example fixed essential criterion (3 points, independent): explain Cargo's dependency management, builds/tests and invocation of rustc. Saved rule: one point per supported part; full credit requires all three. “Cargo is a package manager” earns 1/3, with feedback that builds/tests and compiler invocation are missing; essential status is not passed. “It resolves dependencies, builds the project and runs tests, calling Rust's compiler to produce binaries” earns 3/3 when independent. “It edits images” earns 0/3. Never infer the omitted parts from familiarity with Cargo. The existing helper derives essential status/pass; attempts, assistance and rubric revisions remain immutable. See the focused regression in eval/criterion-evidence.json.
